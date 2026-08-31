@@ -183,7 +183,7 @@ export async function getKBStats(): Promise<KBStats> {
 // ─── Incidents ────────────────────────────────────────────────────────────────
 
 export async function getIncidents(): Promise<Incident[]> {
-  const res = await fetch(`${API_URL}/incidents/`, {
+  const res = await fetch(`${API_URL}/incidents`, {
     headers: getAuthHeaders(),
   });
   if (!res.ok) return [];
@@ -311,5 +311,74 @@ export async function executeRemediation(
     const err = await res.json().catch(() => ({}));
     throw new Error(err.detail || `Error ${res.status}: No se pudo ejecutar la remediación`);
   }
+  return res.json();
+}
+
+export async function exportPostmortem(incidentId: string): Promise<Blob> {
+  const res = await fetch(`${API_URL}/incidents/${incidentId}/post-mortem/export?format=pdf`, {
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Error ${res.status}: No se pudo generar el Post-Mortem`);
+  }
+  return res.blob();
+}
+
+// ─── Users ────────────────────────────────────────────────────────────────────
+
+export interface UserItem {
+  id: string;
+  username: string;
+  email: string;
+  role: string;
+  full_name?: string;
+  is_active: boolean;
+  last_login?: string;
+}
+
+export async function listUsers(): Promise<UserItem[]> {
+  const res = await fetch(`${API_URL}/api/v1/users`, {
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) throw new Error(`Error ${res.status}: No se pudo obtener la lista de usuarios`);
+  return res.json();
+}
+
+export async function createUser(payload: {
+  username: string;
+  email: string;
+  password: string;
+  full_name: string;
+  role: string;
+}): Promise<UserItem> {
+  const res = await fetch(`${API_URL}/api/v1/users`, {
+    method: "POST",
+    headers: getAuthHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    if (Array.isArray(errorData.detail)) {
+      const msg = errorData.detail
+        .map((item: any) => `${item.loc[item.loc.length - 1]}: ${item.msg}`)
+        .join(" | ");
+      throw new Error(msg);
+    }
+    throw new Error(errorData.detail || `Error ${res.status}: No se pudo crear el usuario`);
+  }
+  return res.json();
+}
+
+export async function updateUser(
+  userId: string,
+  payload: { role?: string; is_active?: boolean }
+): Promise<UserItem> {
+  const res = await fetch(`${API_URL}/api/v1/users/${userId}`, {
+    method: "PATCH",
+    headers: getAuthHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(`Error ${res.status}: No se pudo actualizar el usuario`);
   return res.json();
 }

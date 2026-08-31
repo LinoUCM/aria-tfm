@@ -3,7 +3,7 @@
 
 import { TopologyMap } from "@/components/TopologyMap";
 import { useState, useEffect, useRef } from "react";
-import { streamIncidentsFeed, streamIncidentAnalysis } from "@/lib/api";
+import { getIncidents, exportPostmortem, streamIncidentsFeed, streamIncidentAnalysis } from "@/lib/api";
 import { clsx } from "clsx";
 import { formatDistanceToNow } from "date-fns";
 import ReactMarkdown from "react-markdown";
@@ -58,27 +58,9 @@ function PostMortemButton({
     setLoading(true);
 
     try {
-      const match = document.cookie.match(new RegExp("(^| )aria_token=([^;]+)"));
-      const token = match ? match[2] : localStorage.getItem("aria_token") || "";
-
-      // Se solicita la generación/exportación directamente por GET en formato PDF
-      const res = await fetch(
-        `http://localhost:8000/incidents/${incident.id}/post-mortem/export?format=pdf`,
-        {
-          method: "GET",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
-
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => null);
-        throw new Error(errorData?.detail || "Error al procesar el Post-Mortem");
-      }
+      const blob = await exportPostmortem(incident.id);
 
       // Descarga automática del PDF generado
-      const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -143,21 +125,9 @@ export default function IncidentsPage() {
 
     const fetchIncidents = async () => {
       try {
-        const match = document.cookie.match(new RegExp("(^| )aria_token=([^;]+)"));
-        const token = match ? match[2] : localStorage.getItem("aria_token") || "";
-
-        const res = await fetch("http://localhost:8000/incidents", {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-        });
-
-        if (res.ok) {
-          const data = await res.json();
-          if (isMounted) {
-            setIncidents(Array.isArray(data) ? data : data.incidents || []);
-          }
+        const data = await getIncidents();
+        if (isMounted) {
+          setIncidents(data);
         }
       } catch (err) {
         console.error("Error cargando incidentes:", err);

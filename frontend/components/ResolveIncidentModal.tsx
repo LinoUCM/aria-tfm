@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Check, Loader2, X, Sparkles } from "lucide-react";
+import { resolveIncident } from "@/lib/api";
 
 interface ResolveIncidentModalProps {
   isOpen: boolean;
@@ -33,25 +34,7 @@ export function ResolveIncidentModal({
     setError(null);
 
     try {
-      const match = document.cookie.match(new RegExp("(^| )aria_token=([^;]+)"));
-      const token = match ? match[2] : localStorage.getItem("aria_token") || "";
-
-      // Ajusta la URL si tu router de webhooks tiene prefijo (ej: /webhooks/incidents/...)
-      const res = await fetch(`http://localhost:8000/incidents/${incidentId}/resolve`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          resolution_notes: notes,
-          executed_by: executedBy,
-        }),
-      });
-
-      if (!res.ok) {
-        throw new Error(`Error ${res.status}: No se pudo procesar la resolución`);
-      }
+      await resolveIncident(incidentId, notes, executedBy);
 
       setNotes("");
       onSuccess(incidentId);

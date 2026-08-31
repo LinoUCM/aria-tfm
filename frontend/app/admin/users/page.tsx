@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { UserPlus, CheckCircle, XCircle, Loader2 } from "lucide-react";
 import toast from "react-hot-toast";
 import { useRouter } from "next/navigation";
+import { listUsers, createUser, updateUser } from "@/lib/api";
 
 interface UserItem {
   id: string;
@@ -30,32 +31,16 @@ export default function UsersAdminPage() {
   const [role, setRole] = useState("VIEWER");
   const [creating, setCreating] = useState(false);
 
-  // Obtener JWT desde cookies o localStorage
-  const getAuthHeaders = () => {
-    const match = document.cookie.match(new RegExp("(^| )aria_token=([^;]+)"));
-    const token = match ? match[2] : localStorage.getItem("aria_token") || "";
-    return {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    };
-  };
-
-const fetchUsers = async () => {
+  const fetchUsers = async () => {
     try {
-      const res = await fetch("http://localhost:8000/api/v1/users", {
-        headers: getAuthHeaders(),
-      });
-
-      if (res.status === 403) {
+      const data = await listUsers();
+      setUsers(data);
+    } catch (err: any) {
+      if (String(err.message).includes("403")) {
         toast.error("No tienes permisos de Administrador para ver esta sección");
         router.push("/chat");
         return;
       }
-
-      if (!res.ok) throw new Error("Error al obtener la lista de usuarios");
-      const data = await res.json();
-      setUsers(data);
-    } catch (err: any) {
       toast.error(err.message || "Error al cargar la lista de usuarios");
     } finally {
       setLoading(false);
@@ -70,26 +55,13 @@ const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     setCreating(true);
     try {
-      const res = await fetch("http://localhost:8000/api/v1/users", {
-        method: "POST",
-        headers: getAuthHeaders(),
-        body: JSON.stringify({
-          username,
-          email,
-          password,
-          full_name: fullName,
-          role,
-        }),
+      await createUser({
+        username,
+        email,
+        password,
+        full_name: fullName,
+        role,
       });
-
-      if (!res.ok) {
-        const errorData = await res.json();
-        // Si es un error 422 de Pydantic, convertimos el array detail a string legible
-        const detailMsg = Array.isArray(errorData.detail)
-          ? errorData.detail.map((err: any) => `${err.loc[err.loc.length - 1]}: ${err.msg}`).join(" | ")
-          : errorData.detail || "Error al crear usuario";
-        throw new Error(detailMsg);
-      }
 
       toast.success("Usuario creado correctamente");
       setShowModal(false);
@@ -108,12 +80,7 @@ const handleCreateUser = async (e: React.FormEvent) => {
 
   const handleToggleActive = async (user: UserItem) => {
     try {
-      const res = await fetch(`http://localhost:8000/api/v1/users/${user.id}`, {
-        method: "PATCH",
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ is_active: !user.is_active }),
-      });
-      if (!res.ok) throw new Error("Error actualizando estado");
+      await updateUser(user.id, { is_active: !user.is_active });
       toast.success(`Usuario ${user.is_active ? "desactivado" : "activado"}`);
       fetchUsers();
     } catch (err: any) {
@@ -123,12 +90,7 @@ const handleCreateUser = async (e: React.FormEvent) => {
 
   const handleChangeRole = async (userId: string, newRole: string) => {
     try {
-      const res = await fetch(`http://localhost:8000/api/v1/users/${userId}`, {
-        method: "PATCH",
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ role: newRole }),
-      });
-      if (!res.ok) throw new Error("Error cambiando el rol");
+      await updateUser(userId, { role: newRole });
       toast.success("Rol actualizado");
       fetchUsers();
     } catch (err: any) {
