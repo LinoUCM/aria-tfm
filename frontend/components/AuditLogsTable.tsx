@@ -61,7 +61,7 @@ export default function AuditLogsTable() {
                   <td className="p-3 text-gray-400">
                     {log.timestamp ? new Date(log.timestamp).toLocaleString() : "-"}
                   </td>
-                  <td className="p-3 font-mono text-xs text-blue-400">
+                  <td className="p-3 font-mono text-xs text-blue-400" title={log.incident_id}>
                     {log.incident_id.slice(0, 8)}...
                   </td>
                   <td className="p-3 font-semibold text-gray-200">{log.action_id}</td>

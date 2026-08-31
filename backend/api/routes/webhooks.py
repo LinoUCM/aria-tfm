@@ -379,7 +379,7 @@ async def get_audit_logs(
             "target": log.target,
             "executed_by": log.executed_by,
             "status": log.status,
-            "timestamp": log.timestamp.isoformat() if log.timestamp else None,
+            "timestamp": f"{log.timestamp.isoformat()}Z" if log.timestamp else None,
         }
         for log in logs
     ]
