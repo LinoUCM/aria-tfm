@@ -193,4 +193,5 @@ class AuditLog(Base):
     target = Column(String(255), nullable=False)
     executed_by = Column(String(255), default="admin@aria.internal")
     status = Column(String(50), nullable=False)
+    details = Column(Text, nullable=True)
     timestamp = Column(DateTime, default=datetime.utcnow)

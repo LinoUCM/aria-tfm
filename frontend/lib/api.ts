@@ -249,6 +249,7 @@ export interface AuditLog {
   target: string;
   executed_by: string;
   status: string;
+  details?: string | null;
   timestamp: string | null;
 }
 

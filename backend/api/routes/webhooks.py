@@ -380,6 +380,7 @@ async def get_audit_logs(
             "target": log.target,
             "executed_by": log.executed_by,
             "status": log.status,
+            "details": log.details,
             "timestamp": f"{log.timestamp.isoformat()}Z" if log.timestamp else None,
         }
         for log in logs
@@ -561,6 +562,7 @@ async def resolve_incident_with_feedback(
         target=incident.service_affected or "unknown",
         executed_by=payload.executed_by,
         status="SUCCESS",
+        details=payload.resolution_notes,
     )
     db.add(audit_entry)
 
