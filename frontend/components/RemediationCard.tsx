@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { executeRemediation } from '@/lib/api';
 
 interface RemediationProps {
   incidentId: string;
@@ -49,27 +50,22 @@ export const RemediationCard: React.FC<RemediationProps> = ({ incidentId, analys
   const handleExecute = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`http://localhost:8000/incidents/${incidentId}/remediate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action_id: playbook.actionId,
-          parameters: playbook.params,
-        }),
-      });
-
-      const data = await res.json();
-      if (res.ok) {
-        setResultMessage(`✅ ${data.message}`);
-        setTimeout(() => {
-          setShowModal(false);
-          onResolved();
-        }, 1500);
+      const data = await executeRemediation(
+        incidentId,
+        playbook.actionId,
+        playbook.params
+      );
+      setResultMessage(`✅ ${data.message}`);
+      setTimeout(() => {
+        setShowModal(false);
+        onResolved();
+      }, 1500);
+    } catch (err: any) {
+      if (err instanceof TypeError) {
+        setResultMessage("❌ Fallo de conexión con el backend.");
       } else {
-        setResultMessage(`❌ Error: ${data.detail}`);
+        setResultMessage(`❌ Error: ${err.message}`);
       }
-    } catch (err) {
-      setResultMessage("❌ Fallo de conexión con el backend.");
     } finally {
       setLoading(false);
     }

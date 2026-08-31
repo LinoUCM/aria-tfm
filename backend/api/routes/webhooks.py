@@ -20,6 +20,7 @@ from models.schemas import DatadogWebhookPayload
 from services.sse_manager import sse_manager
 from data.datadog_presets import get_preset_with_timestamp, list_presets
 from services.remediation import remediation_service
+from core.security import require_roles, TokenData
 
 logger = structlog.get_logger()
 router = APIRouter(tags=["Webhooks & Simulator"])
@@ -208,6 +209,7 @@ async def execute_incident_remediation(
     incident_id: str,
     payload: RemediationRequest,
     db: AsyncSession = Depends(get_db),
+    current_user: TokenData = Depends(require_roles(["ADMIN", "ON_CALL"])),
 ):
     try:
         inc_uuid = uuid.UUID(incident_id)

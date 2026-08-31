@@ -296,3 +296,20 @@ export async function updateIncidentStatus(id: string, status: string): Promise<
   });
   if (!res.ok) throw new Error("Error al actualizar el estado");
 }
+
+export async function executeRemediation(
+  incidentId: string,
+  actionId: string,
+  parameters: Record<string, any>
+): Promise<any> {
+  const res = await fetch(`${API_URL}/incidents/${incidentId}/remediate`, {
+    method: "POST",
+    headers: getAuthHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ action_id: actionId, parameters }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Error ${res.status}: No se pudo ejecutar la remediación`);
+  }
+  return res.json();
+}
