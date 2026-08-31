@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 import re
 from datetime import datetime, timezone
@@ -551,6 +552,18 @@ async def resolve_incident_with_feedback(
 
     incident = await db.merge(incident)
     incident.status = IncidentStatus.RESOLVED
+
+    # Registro de auditoría de la resolución manual con feedback (mismo patrón
+    # de campos que el AuditLog del endpoint /remediate).
+    audit_entry = AuditLog(
+        incident_id=incident.id,
+        action_id="MANUAL_RESOLUTION_WITH_FEEDBACK",
+        target=incident.service_affected or "unknown",
+        executed_by=payload.executed_by,
+        status="SUCCESS",
+    )
+    db.add(audit_entry)
+
     await db.commit()
 
     sev_val = incident.severity.value if hasattr(incident.severity, "value") else str(incident.severity)
@@ -576,6 +589,132 @@ async def resolve_incident_with_feedback(
 
 
 # ─── Endpoint Exportación Post-Mortem ─────────────────────────────────────────
+
+_TABLE_SEPARATOR_RE = re.compile(r'^\|?\s*:?-+:?\s*(\|?\s*:?-+:?\s*)+$')
+
+
+def _parse_md_table_row(raw: str) -> list[str]:
+    """'| a | b | c |'  ->  ['a', 'b', 'c']"""
+    return [cell.strip() for cell in raw.strip().strip('|').split('|')]
+
+
+_SEPARATOR_CELL_RE = re.compile(r'^:?-+:?$')
+
+
+def _is_separator_row(cells: list[str]) -> bool:
+    """True si TODAS las celdas de la fila son separadores tipo '---' o ':---'."""
+    return bool(cells) and all(_SEPARATOR_CELL_RE.match(c) for c in cells)
+
+
+def _render_postmortem_pdf(postmortem_md: str) -> bytes:
+    """Renderiza el Markdown del Post-Mortem a PDF y devuelve los bytes.
+
+    ATENCIÓN: es código SÍNCRONO y potencialmente lento (fpdf2). Debe ejecutarse
+    SIEMPRE dentro de ``asyncio.to_thread(...)`` envuelto en un ``asyncio.wait_for``
+    con timeout — nunca directamente en el hilo de evento de asyncio, porque un
+    contenido patológico podría bloquear el proceso entero de FastAPI.
+
+    Las tablas Markdown se dibujan con ``pdf.table()`` (wrapping robusto por celda)
+    en lugar de aplanarlas a una sola línea y pasarlas a ``multi_cell`` al ancho
+    completo, que dispara un bucle de ajuste de línea degenerado en fpdf2.
+    """
+    from fpdf import FPDF
+
+    class PostMortemPDF(FPDF):
+        def header(self):
+            self.set_font('Helvetica', 'B', 12)
+            self.cell(0, 8, 'ARIA SRE Platform - Official Post-Mortem Report', border=False, ln=True, align='C')
+            self.set_draw_color(200, 200, 200)
+            self.line(10, 18, 200, 18)
+            self.ln(5)
+
+        def footer(self):
+            self.set_y(-15)
+            self.set_font('Helvetica', 'I', 8)
+            self.cell(0, 10, f'Página {self.page_no()}', align='C')
+
+    pdf = PostMortemPDF()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
+
+    lines = postmortem_md.split('\n')
+    i = 0
+    total = len(lines)
+    while i < total:
+        clean_line = sanitize_md_for_pdf(lines[i]).strip()
+        pdf.set_x(pdf.l_margin)
+
+        # Línea separadora de tabla Markdown (|---|---|): se ignora (igual que antes)
+        if _TABLE_SEPARATOR_RE.match(clean_line):
+            i += 1
+            continue
+
+        # ── Bloque de tabla Markdown ──────────────────────────────────────────
+        # Se acumulan las filas contiguas que empiezan por '|' y se dibujan como
+        # tabla real. pdf.table() reparte el ancho de página entre columnas y hace
+        # el wrapping por celda, evitando la causa raíz del cuelgue.
+        if clean_line.startswith('|'):
+            table_rows: list[list[str]] = []
+            while i < total:
+                row_line = sanitize_md_for_pdf(lines[i]).strip()
+                if not row_line.startswith('|'):
+                    break
+                i += 1
+                cells = _parse_md_table_row(row_line)
+                if cells and not _is_separator_row(cells):
+                    table_rows.append(cells)
+
+            if table_rows:
+                ncols = max(len(r) for r in table_rows)
+                norm_rows = [r + [""] * (ncols - len(r)) for r in table_rows]
+                pdf.set_font('Helvetica', '', 8)
+                # Ancho disponible = pdf.w - pdf.l_margin - pdf.r_margin (== pdf.epw),
+                # que es justo lo que pdf.table() usa por defecto y reparte entre columnas.
+                with pdf.table(
+                    first_row_as_headings=True,   # 1ª fila en negrita = cabecera
+                    borders_layout="ALL",
+                    text_align="LEFT",
+                    line_height=5,
+                    width=pdf.w - pdf.l_margin - pdf.r_margin,
+                ) as table:
+                    for r in norm_rows:
+                        trow = table.row()
+                        for cell_text in r:
+                            trow.cell(cell_text)
+                pdf.ln(2)
+            continue
+
+        # ── Resto de elementos Markdown (sin cambios respecto al comportamiento previo)
+        if clean_line.startswith('# '):
+            pdf.set_font('Helvetica', 'B', 14)
+            pdf.multi_cell(0, 7, txt=clean_line.replace('# ', '').strip())
+            pdf.ln(2)
+        elif clean_line.startswith('## '):
+            pdf.set_font('Helvetica', 'B', 12)
+            pdf.ln(2)
+            pdf.multi_cell(0, 6, txt=clean_line.replace('## ', '').strip())
+            pdf.ln(1)
+        elif clean_line.startswith('### '):
+            pdf.set_font('Helvetica', 'B', 10)
+            pdf.multi_cell(0, 5, txt=clean_line.replace('### ', '').strip())
+            pdf.ln(1)
+        elif clean_line.startswith('* ') or clean_line.startswith('- '):
+            pdf.set_font('Helvetica', '', 9)
+            item_text = clean_line[2:].strip()
+            pdf.multi_cell(0, 5, txt=f"  - {item_text}")
+        else:
+            if clean_line:
+                pdf.set_font('Helvetica', '', 9)
+                pdf.multi_cell(0, 5, txt=clean_line)
+            else:
+                pdf.ln(2)
+
+        i += 1
+
+    output_res = pdf.output(dest='S')
+    pdf_bytes = output_res.encode('latin-1') if isinstance(output_res, str) else bytes(output_res)
+    return pdf_bytes
+
 
 @router.get("/incidents/{incident_id}/post-mortem/export")
 async def export_incident_postmortem(
@@ -686,83 +825,34 @@ async def export_incident_postmortem(
 
     # 4. Compilar archivo y guardar físicamente en el servidor
     if format.lower() == "pdf":
+        # El renderizado de fpdf2 es síncrono y, ante contenido patológico, puede
+        # tardar muchísimo. Lo aislamos en un hilo y le ponemos un timeout duro
+        # para no congelar el hilo de evento de asyncio.
         try:
-            from fpdf import FPDF
-
-            class PostMortemPDF(FPDF):
-                def header(self):
-                    self.set_font('Helvetica', 'B', 12)
-                    self.cell(0, 8, 'ARIA SRE Platform - Official Post-Mortem Report', border=False, ln=True, align='C')
-                    self.set_draw_color(200, 200, 200)
-                    self.line(10, 18, 200, 18)
-                    self.ln(5)
-
-                def footer(self):
-                    self.set_y(-15)
-                    self.set_font('Helvetica', 'I', 8)
-                    self.cell(0, 10, f'Página {self.page_no()}', align='C')
-
-            pdf = PostMortemPDF()
-            pdf.set_auto_page_break(auto=True, margin=15)
-            pdf.add_page()
-
-            lines = postmortem_md.split('\n')
-            for line in lines:
-                clean_line = sanitize_md_for_pdf(line).strip()
-                pdf.set_x(pdf.l_margin)
-
-                if re.match(r'^\|?\s*:?-+:?\s*(\|?\s*:?-+:?\s*)+$', clean_line):
-                    continue
-
-                if clean_line.startswith('# '):
-                    pdf.set_font('Helvetica', 'B', 14)
-                    pdf.multi_cell(0, 7, txt=clean_line.replace('# ', '').strip())
-                    pdf.ln(2)
-                elif clean_line.startswith('## '):
-                    pdf.set_font('Helvetica', 'B', 12)
-                    pdf.ln(2)
-                    pdf.multi_cell(0, 6, txt=clean_line.replace('## ', '').strip())
-                    pdf.ln(1)
-                elif clean_line.startswith('### '):
-                    pdf.set_font('Helvetica', 'B', 10)
-                    pdf.multi_cell(0, 5, txt=clean_line.replace('### ', '').strip())
-                    pdf.ln(1)
-                elif clean_line.startswith('* ') or clean_line.startswith('- '):
-                    pdf.set_font('Helvetica', '', 9)
-                    item_text = clean_line[2:].strip()
-                    pdf.multi_cell(0, 5, txt=f"  - {item_text}")
-                elif clean_line.startswith('|'):
-                    columns = [col.strip() for col in clean_line.split('|') if col.strip()]
-                    if columns:
-                        row_str = " | ".join(columns)
-                        pdf.set_font('Helvetica', '', 8)
-                        pdf.multi_cell(0, 5, txt=row_str)
-                else:
-                    if clean_line:
-                        pdf.set_font('Helvetica', '', 9)
-                        pdf.multi_cell(0, 5, txt=clean_line)
-                    else:
-                        pdf.ln(2)
-
-            output_res = pdf.output(dest='S')
-            pdf_bytes = output_res.encode('latin-1') if isinstance(output_res, str) else bytes(output_res)
-
-            # Guardar PDF en disco
-            with open(file_path, "wb") as f:
-                f.write(pdf_bytes)
-
-            return FileResponse(
-                path=file_path,
-                filename=generated_filename,
-                media_type="application/pdf"
+            pdf_bytes = await asyncio.wait_for(
+                asyncio.to_thread(_render_postmortem_pdf, postmortem_md),
+                timeout=20.0
             )
-
-        except Exception as pdf_err:
-            logger.error("pdf_export_failed", error=str(pdf_err))
+        except asyncio.TimeoutError:
+            logger.error("pdf_render_timeout", incident_id=incident_id)
             raise HTTPException(
                 status_code=500,
-                detail=f"Error al generar el PDF: {str(pdf_err)}"
+                detail="La generación del PDF tardó demasiado. Intenta de nuevo "
+                       "o exporta en formato Markdown."
             )
+        except Exception as pdf_err:
+            logger.error("pdf_export_failed", error=str(pdf_err))
+            raise HTTPException(status_code=500, detail=f"Error al generar el PDF: {str(pdf_err)}")
+
+        # Guardar PDF en disco
+        with open(file_path, "wb") as f:
+            f.write(pdf_bytes)
+
+        return FileResponse(
+            path=file_path,
+            filename=generated_filename,
+            media_type="application/pdf"
+        )
 
     # Guardar Markdown en disco
     with open(file_path, "w", encoding="utf-8") as f:
