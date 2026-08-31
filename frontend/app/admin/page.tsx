@@ -12,7 +12,7 @@ import {
   listDocuments, uploadDocument, addDocumentURL,
   deleteDocument, reindexDocument, getKBStats,
   Document, KBStats
-} from "@/lib/api_12082026";
+} from "@/lib/api";
 import { clsx } from "clsx";
 import { formatDistanceToNow } from "date-fns";
 

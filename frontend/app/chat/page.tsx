@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { sendMessage, streamChat } from "@/lib/api_12082026";
+import { sendMessage, streamChat } from "@/lib/api";
 import toast from "react-hot-toast";
 import {
   Send, Mic, MicOff, Paperclip, Bot, User,
