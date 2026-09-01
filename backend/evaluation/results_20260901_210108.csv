@@ -1,0 +1,163 @@
+test_id,preset_key,tier,incident_id,fired_at,predicted_root_cause,root_cause_correct,cited_sources,citation_correct,forbidden_citation_hit,forbidden_root_cause_hit,latency_seconds,status,notes,analysis_full_text
+A1-postgres-pool,postgres_p2_connections,A,10abb7e5-e400-491e-91da-502517c4e5fb,2026-09-01T20:58:04.548505,aria_db,True,RUNBOOK-AUTO-ARIA_DB-d1c823ac.md; RB-001_PostgreSQL_Connection_Exhaustion.pdf; RUNBOOK-AUTO-ARIA_DB-66bd443f.md,True,False,False,16.1,OK,Match directo: RB-001 cubre exactamente este escenario.,"1.  **Quick diagnosis**
+    PostgreSQL connection pool for `aria_db` is critically exhausted (99.6% utilized, 498/500 active connections), resulting in 127 waiting queries and 5400ms connection wait latency. The likely root cause is an accumulation of unreleased `idle in transaction` connections or long-running queries within the database.
+
+2.  **Recommended steps**
+    1.  **Diagnose Connection States:** Execute the following queries on the `aria_db` instance to identify active connections and their states:
+        *   `SELECT count(*), state, usename FROM pg_stat_activity GROUP BY state, usename;`
+        *   `SELECT pid, now() - query_start AS duration, query, state FROM pg_stat_activity WHERE state != 'idle' ORDER BY duration DESC;`
+    2.  **Terminate Stalled Processes:** If long-running or `idle in transaction` queries (e.g., duration > 5 minutes) are identified, terminate them using:
+        *   `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE now() - query_start > INTERVAL '5 minutes';`
+
+3.  **Relevant context from KB**
+    This incident closely matches documented PostgreSQL connection exhaustion events impacting `aria_db`. Specifically, `[RUNBOOK-AUTO-ARIA_DB-d1c823ac.md]` describes an identical scenario with 99.6% utilization, 127 waiting queries, and 5400ms latency, citing `idle in transaction` connections or long-duration queries as the primary cause. The diagnostic and resolution steps are derived from `[RB-001_PostgreSQL_Connection_Exhaustion.pdf]` and have been used in previous remediations, as noted in `[RUNBOOK-AUTO-ARIA_DB-66bd443f.md]`.
+
+```json
+{
+  ""root_cause"": ""aria_db"",
+  ""service_affected"": ""aria_db""
+}
+```"
+A2-redis-memory,redis_p3_memory,A,c2ffd75d-c776-425d-b0da-3adbe22596fe,2026-09-01T20:58:27.049433,redis-cache,True,Playbook-002_Redis_Memory_Eviction.pdf; Playbook-002_Redis_Memory_Eviction.pdf; Playbook-002_Redis_Memory_Eviction.pdf; Playbook-002_Redis_Memory_Eviction.pdf; RB-002_Redis_Memory_Saturation.pdf; Playbook-002_Redis_Memory_Eviction.pdf; RUNBOOK-AUTO-CACHE-90a86901.md,True,False,False,16.1,OK,Match directo: RB-002 + Playbook-002 cubren este escenario.,"**Quick diagnosis**
+The `redis-cache` instance is experiencing high memory pressure (89.2% capacity, 13.4GB used out of 15.0GB allocated). This has triggered its eviction policy, confirmed by `evicted_keys_per_sec: 234`, indicating active key removal and potential cache thrashing. This state aligns with the 85% threshold for premature eviction outlined in `[Playbook-002_Redis_Memory_Eviction.pdf]`.
+
+**Recommended steps**
+1.  **Inspect Memory & Configuration:** Connect to the `redis-cache` instance (e.g., `docker exec -it <container_id> redis-cli`) and execute `INFO memory` to review detailed memory statistics.
+2.  **Analyze Key Consumption:** Run `redis-cli --bigkeys` to identify the largest keys contributing to memory usage and pinpoint potential data growth patterns.
+3.  **Purge Volatile Keys:** Given `used_memory_gb` is 13.4GB, execute `redis-cli MEMORY PURGE` to reclaim memory from expired or volatile keys if the analysis from step 2 indicates many temporary keys.
+4.  **Review Eviction Policy:** Confirm the current `maxmemory-policy`. Consider setting it to `allkeys-lru` using `redis-cli CONFIG SET maxmemory-policy allkeys-lru` to optimize eviction behavior, as suggested in `[Playbook-002_Redis_Memory_Eviction.pdf]`.
+5.  **Capacity Planning:** Evaluate if the current `max_memory_gb` (15.0GB) is adequate for sustained load. Plan for a memory scale-up or application-level cache optimization to prevent recurrence.
+
+**Relevant context from KB**
+*   **Memory Threshold:** Redis operating above 85% of allocated RAM is identified as a trigger for premature eviction of user sessions and RAG context. `[Playbook-002_Redis_Memory_Eviction.pdf]`
+*   **Symptoms & Impact:** While the current `hit_rate_percent` (94.1%) is still healthy, sustained high memory usage with active evictions can lead to symptoms like loss of conversation context, elevated response times, and increased cache miss rates (>40%). `[Playbook-002_Redis_Memory_Eviction.pdf]`, `[RB-002_Redis_Memory_Saturation.pdf]`
+*   **Mitigation Strategy:** Key diagnostic and remediation steps for Redis memory issues include checking `INFO memory`, analyzing `--bigkeys`, performing `MEMORY PURGE`, and adjusting `maxmemory-policy`. `[Playbook-002_Redis_Memory_Eviction.pdf]`
+*   **Past Incidents:** Similar P1 incidents illustrate that memory saturation above 98% leads to Out Of Memory (OOM) protection, blocking writes, and severe application impact (e.g., 18.4% error rate, 4800ms P99 latency). `[RUNBOOK-AUTO-CACHE-90a86901.md]`
+
+```json
+{
+  ""root_cause"": ""redis-cache"",
+  ""service_affected"": ""redis-cache""
+}
+```"
+B1-auth-latency-db-rootcause,auth_p1_latency,B,c1795944-2a23-4409-96f7-5a2e0fbab0c5,2026-09-01T20:58:48.616996,aria_db,True,RUNBOOK-AUTO-ARIA_DB-2beee1e3.md; RB-003_PostgreSQL_Slow_Queries.pdf; RB-001_PostgreSQL_Connection_Exhaustion.pdf; RB-002_Redis_Memory_Saturation.pdf; RUNBOOK-AUTO-ARIA_DB-2beee1e3.md,True,False,False,20.2,OK,Requiere razonar via topologia: auth-service -> aria_db.,"1.  **Quick diagnosis**
+    High P99 latency (8200ms) and 3.4% timeout rate on `auth-service` are critical. This incident profile closely matches previous occurrences where `aria_db` (PostgreSQL) performance issues, such as slow queries or connection pool exhaustion, were identified as the root cause. `redis-cache` saturation could also be a contributing factor or a point for immediate mitigation.
+
+2.  **Recommended steps**
+    1.  **Diagnose `aria_db` performance:** Examine `aria_db` instances for `idle in transaction` states, long-running queries, and connection pool exhaustion using `pg_stat_activity`.
+    2.  **Check `redis-cache` metrics:** Monitor `redis-cache` for memory saturation, high CPU usage, or increased latency, indicating a potential bottleneck.
+    3.  **Review `auth-service` error logs:** Analyze recent `auth-service` logs for specific database connection errors or Redis client timeouts.
+
+3.  **Relevant context from KB**
+    *   **[RUNBOOK-AUTO-ARIA_DB-2beee1e3.md]**: Documents an identical incident (`auth-service` P99 > 8s, 3.4% timeouts) where `aria_db` (PostgreSQL issues like slow queries, `idle in transaction`, connection exhaustion) was the identified root cause, with `redis-cache` involved in mitigation.
+    *   **[RB-003_PostgreSQL_Slow_Queries.pdf]**: Symptoms (p99 > 5000ms, timeout rates >3%) align with the current alert, pointing to `idle in transaction` as a common root cause.
+    *   **[RB-001_PostgreSQL_Connection_Exhaustion.pdf]**: Describes PostgreSQL connection pool exhaustion causing latency and HTTP 500s.
+    *   **[RB-002_Redis_Memory_Saturation.pdf]**: While the alert's metrics are higher, it notes Redis saturation can contribute to degraded latency and moderate error rates, aligning with `redis-cache`'s role in mitigation as per [RUNBOOK-AUTO-ARIA_DB-2beee1e3.md].
+    *   **Similar Past Incidents**: Multiple prior `[P1] Latency spike on auth-service — p99 > 8s` alerts have been observed.
+
+```json
+{
+  ""root_cause"": ""aria_db"",
+  ""service_affected"": ""aria_db""
+}
+```"
+C1-payment-no-coverage,payment_p1_error_rate,C,01e993b0-c835-4958-a3e9-cdeb4515fd7e,2026-09-01T20:59:11.812170,aria_db,False,RUNBOOK-AUTO-ARIA_DB-b2300d9c.md; RUNBOOK-AUTO-PAYMENT-SERVICE-894bd98f.md; RB-003_PostgreSQL_Slow_Queries.pdf; RB-001_PostgreSQL_Connection_Exhaustion.pdf; RB-002_Redis_Memory_Saturation.pdf,False,True,False,11.7,OK,OJO al leer resultados: en la Fase 1 v1 este caso 'fallo' pero el texto mostro razonamiento topologico legitimo (payment-service -> aria_db es una dependencia real del sistema). No es alucinacion automatica si vuelve a pasar - leer el texto completo. El Tier E es el que da la senal limpia de alucinacion real.,"1.  **Quick diagnosis**
+    The `payment-service` is experiencing a P1 incident with a critical error rate (12.3%) and severe p99 latency (4823ms). This strongly indicates a bottleneck in its primary data store, `aria_db` (PostgreSQL), likely due to connection exhaustion or long-running, blocked transactions, leading to HTTP 500s.
+
+2.  **Recommended steps**
+    1.  **Diagnose `aria_db` connection state:** Connect to `aria_db` and query `pg_stat_activity` to identify `idle in transaction` sessions, active long-running queries, or potential connection pool exhaustion.
+    2.  **Analyze `aria_db` query logs:** Review recent `aria_db` logs for spikes in query execution times, deadlocks, or error patterns that correlate with the incident start.
+    3.  **Monitor `payment-service` host resources:** Check CPU, memory, and open file descriptors on `payment-service-prod-03` (per historical data) to rule out application-level resource contention.
+    4.  **Prepare for controlled restart (if needed):** If `aria_db` diagnosis yields no immediate resolution, prepare for a controlled restart of the `payment-service` instances to clear potential stale connections and processes.
+
+3.  **Relevant context from KB**
+    *   **[RUNBOOK-AUTO-ARIA_DB-b2300d9c.md]**: Matches current alert metrics (Error rate: 12.3%, p99 Latency: 4823ms) and identifies `payment-service` degradation tied to `aria_db` as a P1 incident.
+    *   **[RUNBOOK-AUTO-PAYMENT-SERVICE-894bd98f.md]**: Confirms high error rate on `payment-service` as a P1, referencing:
+        *   **[RB-003_PostgreSQL_Slow_Queries.pdf]**: Symptoms of severe latency and high error rates are consistent with `idle in transaction` blocking queries in PostgreSQL.
+        *   **[RB-001_PostgreSQL_Connection_Exhaustion.pdf]**: Describes connection pool exhaustion leading to latency and HTTP 500s, suggesting `pg_stat_activity` for diagnostics.
+    *   **[RB-002_Redis_Memory_Saturation.pdf]**: Less relevant; symptoms (1500-3500ms latency, 4-8% error rate) are less severe than the current incident metrics, making PostgreSQL a more likely primary root cause.
+
+```json
+{
+  ""root_cause"": ""aria_db"",
+  ""service_affected"": ""payment-service""
+}
+```"
+C2-gateway-no-coverage,api_gateway_p2_502,C,7d5a5804-2096-485f-9410-017ad2b1d39a,2026-09-01T20:59:28.894815,aria_db,False,RUNBOOK-AUTO-API-GATEWAY-191861cc.md; RUNBOOK-AUTO-CHECKOUT-SERVICE-f74c3808.md; RUNBOOK-AUTO-ARIA_DB-fca47a86.md,True,False,False,17.8,OK,"Mismo caveat que C1: api-gateway -> aria_db/redis-cache es una dependencia topologica real, no una invencion.","1.  **Quick diagnosis**
+    `api-gateway` is experiencing a P2 incident with an 8.7% 502 error rate, indicating upstream services are not responding within the configured 30-second timeout. 3 out of 5 upstream services are currently unhealthy or unresponsive, pointing to widespread backend issues likely stemming from resource saturation or database contention.
+
+2.  **Recommended steps**
+    1.  **Identify specific failing upstreams:** Determine which of the 5 upstream services are reporting unhealthy status or timeouts from the `api-gateway` perspective.
+    2.  **Inspect upstream service health:** Check CPU, memory, network, and connection pools for the identified failing upstream services. Pay particular attention to `checkout-service` and services potentially impacted by database load.
+    3.  **Monitor `aria_db` performance:** Analyze `aria_db` (PostgreSQL equivalent) metrics, including active connections, query latency, CPU utilization, and I/O wait, for signs of saturation or bottlenecks.
+    4.  **Review logs:** Examine `api-gateway` access and error logs, as well as logs for directly impacted upstream services, for specific error messages or stack traces.
+    5.  **Scale resources (if applicable):** If resource exhaustion is identified on `aria_db` or any upstream service, initiate a scaling action.
+
+3.  **Relevant context from KB**
+    *   **[RUNBOOK-AUTO-API-GATEWAY-191861cc.md]** is highly relevant, directly matching the alert title and description. It identifies `auth-service` saturation and `PostgreSQL` (maps to `aria_db`) connection issues as root causes for `api-gateway` 502 upstream errors.
+    *   **[RUNBOOK-AUTO-CHECKOUT-SERVICE-f74c3808.md]** and **[RUNBOOK-AUTO-ARIA_DB-fca47a86.md]** are moderately relevant. They describe scenarios where `checkout-service` experiences high latency and 504 Gateway Timeouts, often caused by `aria_db` degradation, which can indirectly lead to `api-gateway` upstream failures if `checkout-service` is a dependency.
+    *   **Similar Past Incident:** `[P2] API Gateway — 502 upstream errors elevated` (2026-08-27T18:59:36.708590) aligns directly with the current alert.
+
+```json
+{
+  ""root_cause"": ""aria_db"",
+  ""service_affected"": ""api-gateway""
+}
+```"
+D1-k8s-oom-self-learning,k8s_p1_oom,D,04792df2-a99e-4cc1-99d4-96d4fdf1d975,2026-09-01T20:59:52.124276,aria_db,True,RUNBOOK-AUTO-NOTIFICATION-SERVICE-2466de34.md; RUNBOOK-AUTO-API-GATEWAY-191861cc.md,True,False,False,35.8,OK,Valida el bucle de auto-aprendizaje: debe citar el runbook que el propio sistema genero la primera vez que resolvio este incidente.,"1.  **Quick diagnosis**
+    `notification-service` is experiencing a P1 degradation due to 3 of 5 pods being OOMKilled in the `k8s-prod-cluster`. Memory usage reached 498MB, which is 97.2% of the configured 512MB limit, triggering Kubernetes' OOM Killer.
+
+2.  **Recommended steps**
+    1.  **Adjust Resource Quotas:** Temporarily increase the `memory_limit` for `notification-service` pods to restore stability and prevent further OOMKilled events.
+    2.  **Memory Profiling:** Initiate a memory profile (heap dump) on `notification-service` pods to identify potential memory leaks or excessive allocation patterns.
+    3.  **Review Dependencies:** Verify the efficiency of connections and resource management with `aria_db` and `redis-cache` to rule out accumulation of requests or unreleased resources within `notification-service`.
+    4.  **HPA Evaluation:** Review or implement Horizontal Pod Autoscaler (HPA) settings for `notification-service` to ensure proactive scaling based on memory usage before critical limits are reached.
+
+3.  **Relevant context from KB**
+    *   **[RUNBOOK-AUTO-NOTIFICATION-SERVICE-2466de34.md]**: This runbook directly addresses OOMKilled incidents in `notification-service`, detailing memory exhaustion as the cause and providing the basis for recommended steps 1, 2, 3, and 4 (Acciones Preventivas). It confirms the symptom (memory consumption reaching 97.2% of 512MB limit) and root cause (resource exhaustion, `memory_limit` exceeded).
+    *   **[RUNBOOK-AUTO-API-GATEWAY-191861cc.md]**: Provides context on OOMKilled events potentially stemming from inefficient database connection management (e.g., PostgreSQL connection pools), which supports investigating `aria_db` interactions as per step 3.
+    *   **Similar Past Incidents**: `[P1] Kubernetes — OOMKilled pods in notification-service (2026-08-31T22:24:23.728787)` indicates a recurring pattern for this service.
+
+```json
+{
+  ""root_cause"": ""aria_db"",
+  ""service_affected"": ""aria_db""
+}
+```"
+E1-external-tls-cert,custom_payload,E,a4d36ef5-f5d0-4997-96af-e8955e79b883,2026-09-01T21:00:33.325707,external,False,RUNBOOK-AUTO-PAYMENT-SERVICE-894bd98f.md; RB-001_PostgreSQL_Connection_Exhaustion.pdf; RB-002_Redis_Memory_Saturation.pdf,False,True,False,11.6,OK,"Control negativo: proveedor externo, cero relacion topologica posible con aria_db/redis-cache/servicios internos. Comportamiento correcto esperado: quedarse en el ambito de lo reportado (CDN/TLS) o admitir que no hay informacion suficiente para ir mas alla - NUNCA inventar una causa raiz en la infraestructura interna.","1.  **Quick diagnosis**
+    The SSL/TLS certificate for `static-assets.thirdparty-cdn.com` is expiring in 3 days with no detected renewal, indicating a high risk of service degradation for externally hosted static assets. This is an issue with an external provider, not internal infrastructure.
+
+2.  **Recommended steps**
+    1.  Immediately contact the external CDN provider for `static-assets.thirdparty-cdn.com` to confirm certificate renewal status and expected deployment timeline.
+    2.  Evaluate the business impact of a potential outage (e.g., degraded UX, broken UI elements) if the certificate is not renewed before expiry.
+    3.  Prepare contingency plans for static asset delivery if the external CDN provider cannot resolve the certificate issue promptly.
+
+3.  **Relevant context from KB**
+    The provided Knowledge Base runbooks ([RUNBOOK-AUTO-PAYMENT-SERVICE-894bd98f.md], [RB-001_PostgreSQL_Connection_Exhaustion.pdf], [RB-002_Redis_Memory_Saturation.pdf]) are not directly applicable as they address internal system components (PostgreSQL, Redis, payment-service) and not external CDN certificate management. The alert explicitly states the CDN ""has no dependency on our databases or caches.""
+
+```json
+{
+  ""root_cause"": ""external"",
+  ""service_affected"": ""external""
+}
+```"
+E2-external-dns-vendor,custom_payload,E,4a01b352-2101-496b-9cd8-7b08f058a5c3,2026-09-01T21:00:47.957228,external,False,RUNBOOK-AUTO-CHECKOUT-SERVICE-f74c3808.md; RUNBOOK-AUTO-PAYMENT-SERVICE-894bd98f.md,True,False,False,14.9,OK,"Segundo control negativo, mismo proposito que E1 pero con un fallo de tipo diferente (DNS/red egress vs TLS/certificados), para no sacar conclusiones de un unico caso.","1.  **Quick diagnosis**
+    DNS resolution failures to an external vendor webhook endpoint (`partner-webhooks.external-vendor.com`) are occurring intermittently (34.5% failure rate, 8200ms latency). This is an external dependency issue, not related to internal services, databases, or caches.
+
+2.  **Recommended steps**
+    1.  Check the status page or contact the `external-vendor.com` support for known outages or issues with their webhook service or DNS.
+    2.  Perform DNS lookups (`dig partner-webhooks.external-vendor.com` or `nslookup partner-webhooks.external-vendor.com`) from relevant internal hosts to confirm resolution failures from your network perspective.
+    3.  Verify outbound network connectivity (e.g., firewall rules, routing) from your environment to the external vendor's public IPs (if known).
+    4.  Monitor any internal services (e.g., `payment-service`, `checkout-service`) that integrate with this external webhook for increased latency, errors, or growing retry queues due to the inability to send payloads.
+    5.  Implement circuit breakers or rate-limiting for calls to `partner-webhooks.external-vendor.com` if not already in place, to prevent internal resource exhaustion from excessive retries.
+
+3.  **Relevant context from KB**
+    *   `[WEB SEARCH] Datadog Releases Monitoring Features for Detecting and Debugging DNS Issues`: Highlights that ""when DNS performance issues inevitably arise, internally or on the third-party provider side, it often leads to downstream failure that impacts the end-user experience."" This supports the diagnosis of a critical external DNS issue.
+    *   While specific runbooks like [RUNBOOK-AUTO-CHECKOUT-SERVICE-f74c3808.md] and [RUNBOOK-AUTO-PAYMENT-SERVICE-894bd98f.md] detail high latency/error rates, their identified root causes are internal services, databases, or caches. This incident's root cause is explicitly external DNS, therefore these runbooks are not directly applicable for root cause resolution but can provide context for potential *downstream impacts* on internal services if they depend on this external webhook.
+
+```json
+{
+  ""root_cause"": ""external"",
+  ""service_affected"": ""external""
+}
+```"

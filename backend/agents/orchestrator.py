@@ -526,6 +526,7 @@ SYSTEM TOPOLOGY NODES:
 - checkout-service
 - aria_db
 - redis-cache
+- notification-service
 
 Please analyze this alert and provide:
 1. Likely root cause
@@ -533,11 +534,22 @@ Please analyze this alert and provide:
 3. Relevant runbooks or past incidents
 
 CRITICAL REQUIREMENT:
-At the very end of your response, you MUST append a JSON code block identifying the exact root cause node and affected service node from the system topology:
+At the very end of your response, you MUST append a JSON code block identifying
+the root cause and affected service.
+
+If, and ONLY if, the root cause clearly belongs to one of the SYSTEM TOPOLOGY
+NODES listed above, use that exact node_id for both fields.
+
+If the root cause is external to our system (e.g., a third-party vendor, CDN,
+DNS provider, external API, or any dependency NOT listed in SYSTEM TOPOLOGY
+NODES), you MUST use the literal value "external" for both fields instead of
+guessing or forcing an internal node. Do not force a match to an internal node
+when the evidence points outside our system.
+
 ```json
 {{
-  "root_cause": "<node_id>",
-  "service_affected": "<node_id>"
+  "root_cause": "<node_id_or_external>",
+  "service_affected": "<node_id_or_external>"
 }}
 ```"""
 

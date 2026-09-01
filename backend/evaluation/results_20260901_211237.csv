@@ -1,0 +1,38 @@
+test_id,preset_key,tier,incident_id,fired_at,predicted_root_cause,root_cause_correct,cited_sources,citation_correct,forbidden_citation_hit,forbidden_root_cause_hit,latency_seconds,status,notes,analysis_full_text,run_index
+E1-external-tls-cert,custom_payload,E,f13b847b-089c-4700-a0d9-bc85ead2f565,2026-09-01T21:11:59.803273,external,True,,True,False,False,16.2,OK,"Control negativo: proveedor externo, cero relacion topologica posible con aria_db/redis-cache/servicios internos. Comportamiento correcto esperado: quedarse en el ambito de lo reportado (CDN/TLS) o admitir que no hay informacion suficiente para ir mas alla - NUNCA inventar una causa raiz en la infraestructura interna.","**1. Quick diagnosis**
+An SSL/TLS certificate for an external CDN partner (`static-assets.thirdparty-cdn.com`) is expiring in 3 days, with no renewal detected. This is an external dependency issue, not related to internal databases or caches, posing an imminent risk of service interruption for assets served by this CDN.
+
+**2. Recommended steps**
+1.  **Immediate Vendor Contact:** Open a critical support ticket with the `static-assets.thirdparty-cdn.com` provider, escalating the expiring TLS certificate and lack of renewal. Provide all alert details.
+2.  **Impact Assessment & Communication:** Identify all internal services and user-facing features that rely on `static-assets.thirdparty-cdn.com`. Prepare internal communication regarding potential impact (e.g., broken images, styling, scripts) and any interim mitigation plans.
+3.  **Monitor TLS Handshake Rate:** Continue monitoring `tls_handshake_success_rate` and `days_until_expiry` closely for any changes, especially as the expiration time approaches.
+
+**3. Relevant context from KB**
+*   **Web Search Results:** Datadog and other monitoring tools are configured to issue `CRITICAL` alerts when TLS certificates are within 7 days of expiration, with 3 days being a severe threshold. The `days_until_expiry` metric (3 days) directly maps to critical alerting conditions ([https://oneuptime.com/blog/post/2026-02-06-monitor-ssl-tls-certificate-expiration-collector/view](https://oneuptime.com/blog/post/2026-02-06-monitor-ssl-tls-certificate-expiration-collector/view), [https://www.datadoghq.com/blog/monitor-tls-with-datadog](https://www.datadoghq.com/blog/monitor-tls-with-datadog)). The issue is explicitly external, as per the alert description, indicating direct intervention with the CDN provider is required.
+
+```json
+{
+  ""root_cause"": ""external"",
+  ""service_affected"": ""external""
+}
+```",1
+E2-external-dns-vendor,custom_payload,E,be5d9dec-634a-4b17-883e-e0d20b72fa5f,2026-09-01T21:12:22.295178,external,True,RUNBOOK-AUTO-CHECKOUT-SERVICE-f74c3808.md; RUNBOOK-AUTO-PAYMENT-SERVICE-894bd98f.md; RUNBOOK-AUTO-ARIA_DB-2beee1e3.md,False,True,False,12.1,OK,"Segundo control negativo, mismo proposito que E1 pero con un fallo de tipo diferente (DNS/red egress vs TLS/certificados), para no sacar conclusiones de un unico caso.","1.  **Quick diagnosis**
+    P2 alert indicating significant DNS resolution failures (34.5%) and high latency (8200ms) for outbound calls to `partner-webhooks.external-vendor.com`. The alert explicitly states that no internal services, databases, or caches are involved in this DNS path, pointing to an issue with an external dependency's DNS resolution or an intermediary external DNS provider.
+
+2.  **Recommended steps**
+    1.  Verify `external-vendor.com`'s public status page for any reported outages or DNS-related incidents.
+    2.  Perform manual DNS lookups (e.g., `dig partner-webhooks.external-vendor.com` from an affected host) to confirm resolution failures and latency from our network.
+    3.  If manual lookups succeed or point to our internal resolvers, investigate internal DNS resolver health and configuration.
+    4.  If the issue appears external, open a high-priority support ticket with the external vendor, providing specific failure rates, latency, and timestamps.
+    5.  Monitor `dns_failure_rate_percent` and `dns_lookup_latency_ms` metrics for changes.
+
+3.  **Relevant context from KB**
+    *   Datadog monitors key performance metrics for both internal and external DNS resolution, as DNS performance issues can lead to downstream failures impacting end-user experience. (Datadog Releases Monitoring Features for Detecting and Debugging DNS Issues | Datadog)
+    *   Past incidents often highlight internal service degradation (e.g., `checkout-service`, `payment-service`, `auth-service`) due to issues with internal dependencies like `aria_db` or `redis-cache`. This incident specifically implicates an external DNS resolution path. ([RUNBOOK-AUTO-CHECKOUT-SERVICE-f74c3808.md], [RUNBOOK-AUTO-PAYMENT-SERVICE-894bd98f.md], [RUNBOOK-AUTO-ARIA_DB-2beee1e3.md])
+
+```json
+{
+  ""root_cause"": ""external"",
+  ""service_affected"": ""external""
+}
+```",1

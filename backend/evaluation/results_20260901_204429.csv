@@ -1,0 +1,35 @@
+test_id,preset_key,tier,incident_id,fired_at,predicted_root_cause,root_cause_correct,cited_sources,citation_correct,forbidden_citation_hit,latency_seconds,status,notes,analysis_excerpt
+A1-postgres-pool,postgres_p2_connections,A,c4a3dc7b-c6bf-40d9-b774-6cbe4a5bba33,2026-09-01T20:42:04.362806,aria_db,True,,True,False,16.3,OK,Match directo: RB-001 cubre exactamente este escenario.,"1.  **Quick diagnosis**
+    Critical PostgreSQL connection pool exhaustion for `aria_db` service. Active connections are at 99.6% capacity (498/500), leading to new connection rejections, 127 waiting queries, and a 5400ms connection wait latency. This is consistent with unreleased `idle in transaction` connections or long-running queries.
+
+2.  **Recommended steps**
+    1.  **Diagnose Active Connections:** Execute `SELECT count(*), state, usename FROM pg_stat_activity GROUP BY state, usename;` to"
+A2-redis-memory,redis_p3_memory,A,447f7580-7fb7-4857-801e-5528e2934869,2026-09-01T20:42:24.713013,redis-cache,True,Playbook-002_Redis_Memory_Eviction.pdf; Playbook-002_Redis_Memory_Eviction.pdf; Playbook-002_Redis_Memory_Eviction.pdf; Playbook-002_Redis_Memory_Eviction.pdf; RB-002_Redis_Memory_Saturation.pdf,True,False,12.3,OK,Match directo: RB-002 + Playbook-002 cubren este escenario.,"1.  **Quick diagnosis**
+    Redis memory usage is at 89.2% capacity, exceeding the 85% threshold, leading to active key eviction. This indicates potential cache degradation and thrashing, as described in `[Playbook-002_Redis_Memory_Eviction.pdf]`.
+
+2.  **Recommended steps**
+    1.  **Verify Memory Details:** Connect to the `aria-redis-1` container and inspect current memory statistics.
+        `docker exec -it aria-redis-1 redis-cli info memory`
+    2.  **Identify Large Keys:** Analyze the Redis"
+B1-auth-latency-db-rootcause,auth_p1_latency,B,4b92ab7e-a14d-4847-a636-da86c457e470,2026-09-01T20:42:42.373555,aria_db,True,RUNBOOK-AUTO-ARIA_DB-2beee1e3.md; RB-001_PostgreSQL_Connection_Exhaustion.pdf; RB-003_PostgreSQL_Slow_Queries.pdf; RB-002_Redis_Memory_Saturation.pdf,True,False,13.9,OK,"Requiere razonar via topologia: auth-service -> aria_db, no solo leer el tag 'service:auth-service'.","1.  **Quick diagnosis**
+    `auth-service` is experiencing critical P99 latency (8200ms) and a high timeout rate (3.4%), causing user login failures. This pattern directly matches a previous incident where `aria_db` (PostgreSQL) was identified as the root cause, specifically due to slow queries or `idle in transaction` leading to connection exhaustion. `redis-cache` was involved in the immediate mitigation of that incident.
+
+2.  **Recommended steps**
+    1.  **Investigate `aria_db`**:
+        * "
+C1-payment-no-coverage,payment_p1_error_rate,C,df408e4e-f623-4eb8-b1a9-045cd7bc909e,2026-09-01T20:42:59.355850,aria_db,False,RUNBOOK-AUTO-ARIA_DB-b2300d9c.md; RUNBOOK-AUTO-PAYMENT-SERVICE-894bd98f.md; RB-003_PostgreSQL_Slow_Queries.pdf; RB-001_PostgreSQL_Connection_Exhaustion.pdf; RB-002_Redis_Memory_Saturation.pdf,False,True,13.8,OK,Sin runbook dedicado. Verifica que NO cite un runbook irrelevante (p.ej. Redis) solo por rellenar.,"1.  **Quick diagnosis**
+    The `payment-service` is experiencing a P1 incident with a critical error rate of 12.3% and severe p99 latency of 4823ms. This strongly indicates a critical bottleneck in a core dependency, most likely the `aria_db` (PostgreSQL) due to connection exhaustion or blocked transactions. `redis-cache` saturation is a less probable, but possible, contributing factor.
+
+2.  **Recommended steps**
+    1.  **Diagnose `aria_db` connection status:** Connect to `aria_db` and query `"
+C2-gateway-no-coverage,api_gateway_p2_502,C,e5b9cb03-734c-4b9e-bc6a-c05cdfb29e92,2026-09-01T20:43:18.515752,aria_db,False,RUNBOOK-AUTO-API-GATEWAY-191861cc.md,True,False,26.1,OK,Sin runbook dedicado. Misma logica anti-alucinacion que C1.,"1.  **Quick diagnosis**
+    `api-gateway` is experiencing P2 `502 upstream errors` with 8.7% error rate due to upstream service timeouts. Metrics indicate 3 out of 5 upstream services are unhealthy. This points to a degradation or unresponsiveness in `api-gateway`'s direct dependencies.
+
+2.  **Recommended steps**
+    1.  Immediately identify which of the 5 upstream services are currently unhealthy or unresponsive.
+    2.  Investigate logs and metrics (CPU, memory, connections, latency) of the id"
+D1-k8s-oom-self-learning,k8s_p1_oom,D,ad2be054-b9c5-456b-8025-76963654285d,2026-09-01T20:43:49.866842,external,False,RUNBOOK-AUTO-NOTIFICATION-SERVICE-2466de34.md; RUNBOOK-AUTO-NOTIFICATION-SERVICE-2466de34.md; RUNBOOK-AUTO-NOTIFICATION-SERVICE-2466de34.md; RUNBOOK-AUTO-NOTIFICATION-SERVICE-2466de34.md; RUNBOOK-AUTO-NOTIFICATION-SERVICE-2466de34.md; RUNBOOK-AUTO-NOTIFICATION-SERVICE-2466de34.md; RUNBOOK-AUTO-NOTIFICATION-SERVICE-2466de34.md,True,False,33.8,OK,Valida el bucle de auto-aprendizaje: debe citar el runbook que el propio sistema genero la primera vez que se resolvio este tipo de incidente.,"1.  **Quick diagnosis**
+    The `notification-service` is experiencing P1 degradation, with 3 of 5 pods (60%) terminated due to `OOMKilled` events. Current memory usage (498MB) is critically close to the configured `memory_limit` of 512MB, triggering Kubernetes' Out Of Memory Killer.
+
+2.  **Recommended steps**
+    1.  **Analyze Memory Leak:** Initiate a memory profile (`heap dump`) on a stable `notification-service` pod to identify potential memory leaks or unexpected allocation patterns under c"
