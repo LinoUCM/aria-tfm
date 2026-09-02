@@ -346,6 +346,10 @@ class ARIAOrchestrator:
                 file=("audio.webm", audio_bytes, "audio/webm"),
                 model="whisper-large-v3", language="es")
             state["transcribed_text"] = transcription.text
+            if state.get("channel_id"):
+                await sse_manager.publish(
+                    state["channel_id"], "transcription", {"text": transcription.text}
+                )
             skip_rag, rag_chunks = self._classify_message(transcription.text)
             state["skip_rag"] = skip_rag
             state["rag_chunks"] = rag_chunks

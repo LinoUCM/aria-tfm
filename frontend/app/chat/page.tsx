@@ -59,6 +59,7 @@ export default function ChatPage() {
   const [conversationId, setConversationId] = useState<string>();
   const [imageBase64, setImageBase64] = useState<string>();
   const [imagePreview, setImagePreview] = useState<string>();
+  const [audioBase64, setAudioBase64] = useState<string | undefined>(undefined);
   const [isRecording, setIsRecording] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -70,14 +71,19 @@ export default function ChatPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, activeAgents]);
 
- const handleSend = async () => {
-  if (!input.trim() && !imageBase64) return;
+ const handleSend = async (audioBase64Override?: string) => {
+  const audio = audioBase64Override ?? audioBase64;
+  if (!input.trim() && !imageBase64 && !audio) return;
   if (isLoading) return;
+
+  // En un mensaje de voz aún no hay texto: mostramos un marcador que luego
+  // se reemplaza con la transcripción real vía el evento SSE "transcription".
+  const text = audioBase64Override ? "🎤 Mensaje de voz" : input;
 
   const userMessage: Message = {
     id: Date.now().toString(),
     role: "user",
-    content: input,
+    content: text,
     timestamp: new Date(),
   };
 
@@ -99,14 +105,16 @@ export default function ChatPage() {
 
   try {
     const { channel_id, conversation_id } = await sendMessage(
-      input,
+      text,
       conversationId,
-      imageBase64
+      imageBase64,
+      audio
     );
 
     setConversationId(conversation_id);
     setImageBase64(undefined);
     setImagePreview(undefined);
+    setAudioBase64(undefined);
 
     const eventSource = new EventSource(
       `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/chat/stream/${channel_id}`
@@ -126,6 +134,16 @@ export default function ChatPage() {
           case "agent_end":
             setActiveAgents((prev) =>
               prev.filter((a) => a !== data.data.agent)
+            );
+            break;
+
+          case "transcription":
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === userMessage.id
+                  ? { ...m, content: data.data.text }
+                  : m
+              )
             );
             break;
 
@@ -237,8 +255,11 @@ export default function ChatPage() {
         const reader = new FileReader();
         reader.onload = () => {
           const base64 = (reader.result as string).split(",")[1];
-          setInput("[Voice message — transcribing...]");
-          // TODO: send audio_base64 to backend
+          setInput("🎤 Mensaje de voz");
+          setAudioBase64(base64);
+          // Disparamos el envío desde aquí con el base64 local (el estado
+          // audioBase64 aún no está actualizado por ser asíncrono).
+          handleSend(base64);
         };
         reader.readAsDataURL(audioBlob);
         stream.getTracks().forEach((t) => t.stop());
@@ -340,7 +361,7 @@ export default function ChatPage() {
               {isRecording ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
             </button>
             <button
-              onClick={handleSend}
+              onClick={() => handleSend()}
               disabled={isLoading || (!input.trim() && !imageBase64)}
               className="p-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors"
             >
