@@ -30,6 +30,9 @@ router = APIRouter(tags=["Webhooks & Simulator"])
 POSTMORTEM_DIR = Path("storage/postmortems")
 POSTMORTEM_DIR.mkdir(parents=True, exist_ok=True)
 
+RUNBOOK_DIR = Path("storage/runbooks")
+RUNBOOK_DIR.mkdir(parents=True, exist_ok=True)
+
 # ─── Helper PDF Sanitizer & Renderer ─────────────────────────────────────────
 
 def sanitize_md_for_pdf(text: str) -> str:
@@ -278,6 +281,10 @@ async def execute_incident_remediation(
 
     # 3. Guardar el documento en PostgreSQL para que se vea reflejado en el UI de Knowledge Base
     try:
+        runbook_path = RUNBOOK_DIR / filename
+        with open(runbook_path, "w", encoding="utf-8") as f:
+            f.write(runbook_md)
+
         auto_doc = Document(
             id=uuid.uuid4(),
             filename=filename,
@@ -285,7 +292,9 @@ async def execute_incident_remediation(
             category="runbook",
             status="indexed",
             chunks_count=chunks_count or 1,
-            source=DocumentSource.AUTO_GENERATED
+            source=DocumentSource.AUTO_GENERATED,
+            file_path=str(runbook_path),
+            file_type="md",
         )
         db.add(auto_doc)
     except Exception as doc_err:
@@ -537,6 +546,10 @@ async def resolve_incident_with_feedback(
         logger.error("kb_indexing_failed", error=str(e))
 
     try:
+        runbook_path = RUNBOOK_DIR / filename
+        with open(runbook_path, "w", encoding="utf-8") as f:
+            f.write(runbook_md)
+
         auto_doc = Document(
             id=uuid.uuid4(),
             filename=filename,
@@ -544,7 +557,9 @@ async def resolve_incident_with_feedback(
             category="runbook",
             status="indexed",
             chunks_count=chunks_count or 1,
-            source=DocumentSource.AUTO_GENERATED
+            source=DocumentSource.AUTO_GENERATED,
+            file_path=str(runbook_path),
+            file_type="md",
         )
         db.add(auto_doc)
     except Exception as doc_err:

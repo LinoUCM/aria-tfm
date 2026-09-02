@@ -2,10 +2,12 @@ import os
 import uuid
 import aiofiles
 from datetime import datetime
+from pathlib import Path
 from typing import List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, BackgroundTasks
+from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
@@ -153,6 +155,46 @@ async def list_documents(
 async def get_document(doc_id: UUID, db: AsyncSession = Depends(get_db)):
     doc = await _get_doc_or_404(doc_id, db)
     return doc
+
+
+# ─── Get Document Content (view / open) ──────────────────────────────────────
+
+@router.get("/{doc_id}/content")
+async def get_document_content(doc_id: UUID, db: AsyncSession = Depends(get_db)):
+    # Mismo patrón de consulta + 404 que usa GET /{doc_id} en este mismo archivo
+    doc = await _get_doc_or_404(doc_id, db)
+
+    if doc.source == DocumentSource.URL:
+        raise HTTPException(
+            400,
+            "Los documentos de tipo URL se abren directamente desde su "
+            "source_url, no tienen contenido servible por este endpoint."
+        )
+
+    if not doc.file_path or not os.path.exists(doc.file_path):
+        raise HTTPException(
+            404,
+            "Este documento no tiene un archivo asociado (probablemente "
+            "generado antes de que existiera esta función). Puedes "
+            "eliminarlo desde el botón de papelera."
+        )
+
+    # El campo file_type puede venir vacío/None (p. ej. runbooks AUTO_GENERATED
+    # antiguos); en ese caso lo derivamos de la extensión real del archivo en disco.
+    effective_type = doc.file_type or Path(doc.file_path).suffix.lstrip(".").lower()
+
+    if effective_type == "pdf":
+        return FileResponse(
+            path=doc.file_path,
+            filename=doc.filename,
+            media_type="application/pdf",
+        )
+    elif effective_type in ("md", "markdown", "txt"):
+        with open(doc.file_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        return {"content": content, "file_type": effective_type, "filename": doc.filename}
+    else:
+        return FileResponse(path=doc.file_path, filename=doc.filename)
 
 
 # ─── Reindex ─────────────────────────────────────────────────────────────────
