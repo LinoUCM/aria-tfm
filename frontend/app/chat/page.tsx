@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { sendMessage, streamChat } from "@/lib/api";
 import toast from "react-hot-toast";
 import {
-  Send, Mic, MicOff, Paperclip, Bot, User,
+  Send, Mic, Square, Paperclip, Bot, User,
   Loader2, AlertCircle, BookOpen, History
 } from "lucide-react";
 import { clsx } from "clsx";
@@ -358,7 +358,7 @@ export default function ChatPage() {
               className={clsx("p-1.5 transition-colors", isRecording ? "text-red-400 animate-pulse" : "text-gray-500 hover:text-gray-300")}
               title="Voice input"
             >
-              {isRecording ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+              {isRecording ? <Square className="w-4 h-4 fill-current" /> : <Mic className="w-4 h-4" />}
             </button>
             <button
               onClick={() => handleSend()}
@@ -369,8 +369,13 @@ export default function ChatPage() {
             </button>
           </div>
         </div>
-        <p className="text-xs text-gray-600 mt-2 text-center">
-          Enter to send · Shift+Enter for new line · Attach images for visual analysis
+        <p className={clsx(
+          "text-xs mt-2 text-center transition-colors",
+          isRecording ? "text-red-400 font-medium animate-pulse" : "text-gray-600"
+        )}>
+          {isRecording
+            ? "🔴 Escuchando... pulsa el micrófono de nuevo para terminar"
+            : "Enter to send · Shift+Enter for new line · Attach images for visual analysis"}
         </p>
       </div>
     </div>
