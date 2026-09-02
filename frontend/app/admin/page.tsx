@@ -6,13 +6,15 @@ import toast from "react-hot-toast";
 import {
   Upload, Link, Trash2, RefreshCw, FileText, Globe,
   CheckCircle, AlertCircle, Loader2, Database, Filter,
-  ChevronDown, X, Plus
+  ChevronDown, X, Plus, Eye
 } from "lucide-react";
 import {
   listDocuments, uploadDocument, addDocumentURL,
   deleteDocument, reindexDocument, getKBStats,
+  fetchDocumentContent,
   Document, KBStats
 } from "@/lib/api";
+import DocumentViewerModal from "@/components/DocumentViewerModal";
 import { clsx } from "clsx";
 import { formatDistanceToNow } from "date-fns";
 
@@ -70,6 +72,9 @@ export default function AdminPage() {
   const [showURLForm, setShowURLForm] = useState(false);
   const [urlForm, setUrlForm] = useState({ url: "", title: "", category: "other", service_tag: "" });
   const [uploadingIds, setUploadingIds] = useState<Set<string>>(new Set());
+  const [viewerDoc, setViewerDoc] = useState<{ title: string; content: string } | null>(null);
+  const [viewerLoading, setViewerLoading] = useState(false);
+  const [loadingDocId, setLoadingDocId] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     try {
@@ -158,6 +163,29 @@ export default function AdminPage() {
       await loadData();
     } catch {
       toast.error("Failed to reindex");
+    }
+  };
+
+  const handleView = async (doc: Document) => {
+    if (doc.source === "url") {
+      if (doc.source_url) window.open(doc.source_url, "_blank");
+      else toast.error("Este documento no tiene una URL asociada");
+      return;
+    }
+    setViewerLoading(true);
+    setLoadingDocId(doc.id);
+    try {
+      const result = await fetchDocumentContent(doc.id);
+      if (result.isJson) {
+        setViewerDoc({ title: result.filename || doc.filename, content: result.content || "" });
+      } else if (result.url) {
+        window.open(result.url, "_blank");
+      }
+    } catch (err: any) {
+      toast.error(err.message || "No se pudo abrir el documento");
+    } finally {
+      setViewerLoading(false);
+      setLoadingDocId(null);
     }
   };
 
@@ -339,21 +367,35 @@ export default function AdminPage() {
               doc={doc}
               onDelete={handleDelete}
               onReindex={handleReindex}
+              onView={handleView}
+              viewerLoading={viewerLoading}
+              loadingDocId={loadingDocId}
             />
           ))
         )}
       </div>
+
+      <DocumentViewerModal
+        isOpen={viewerDoc !== null}
+        onClose={() => setViewerDoc(null)}
+        title={viewerDoc?.title || ""}
+        content={viewerDoc?.content || ""}
+      />
     </div>
   );
 }
 
 function DocumentRow({
-  doc, onDelete, onReindex
+  doc, onDelete, onReindex, onView, viewerLoading, loadingDocId
 }: {
   doc: Document;
   onDelete: (doc: Document) => void;
   onReindex: (doc: Document) => void;
+  onView: (doc: Document) => void;
+  viewerLoading: boolean;
+  loadingDocId: string | null;
 }) {
+  const isThisLoading = loadingDocId === doc.id;
   const statusConfig = {
     indexed: { icon: CheckCircle, color: "text-green-400", label: "Indexed" },
     processing: { icon: Loader2, color: "text-yellow-400", label: "Processing" },
@@ -390,9 +432,9 @@ function DocumentRow({
               <span className="text-gray-500 ml-1">· {doc.chunks_count} chunks</span>
             )}
           </div>
-          {doc.indexed_at && (
+          {(doc.indexed_at || doc.created_at) && (
             <span className="text-xs text-gray-600">
-              {formatDistanceToNow(new Date(doc.indexed_at), { addSuffix: true })}
+              {formatDistanceToNow(new Date(doc.indexed_at || doc.created_at), { addSuffix: true })}
             </span>
           )}
           {doc.error_message && (
@@ -402,6 +444,18 @@ function DocumentRow({
       </div>
 
       <div className="flex items-center gap-1 flex-shrink-0">
+        <button
+          onClick={() => onView(doc)}
+          disabled={doc.status === "processing" || viewerLoading}
+          className="p-2 text-gray-500 hover:text-blue-400 disabled:opacity-50 transition-colors"
+          title="View document"
+        >
+          {isThisLoading ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <Eye className="w-4 h-4" />
+          )}
+        </button>
         <button
           onClick={() => onReindex(doc)}
           disabled={doc.status === "processing"}

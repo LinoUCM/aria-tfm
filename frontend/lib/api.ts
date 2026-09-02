@@ -180,6 +180,29 @@ export async function getKBStats(): Promise<KBStats> {
   return res.json();
 }
 
+export interface DocumentContentResult {
+  isJson: boolean;
+  content?: string;
+  filename?: string;
+  fileType?: string;
+  url?: string; // presente cuando isJson es false: URL para abrir en pestaña nueva
+}
+
+export async function fetchDocumentContent(docId: string): Promise<DocumentContentResult> {
+  const url = `${API_URL}/admin/documents/${docId}/content`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Error ${res.status}: No se pudo abrir el documento`);
+  }
+  const contentType = res.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) {
+    const data = await res.json();
+    return { isJson: true, content: data.content, filename: data.filename, fileType: data.file_type };
+  }
+  return { isJson: false, url };
+}
+
 // ─── Incidents ────────────────────────────────────────────────────────────────
 
 export async function getIncidents(): Promise<Incident[]> {
