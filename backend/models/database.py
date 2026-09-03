@@ -151,6 +151,7 @@ class Conversation(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     incident_id = Column(UUID(as_uuid=True), ForeignKey("incidents.id"), nullable=True)
+    owner_username = Column(String(255), nullable=True)
     title = Column(String(500))
     messages = Column(JSON, default=list)        # [{role, content, timestamp, agents_used}]
     agents_used = Column(JSON, default=list)     # agentes que intervinieron
