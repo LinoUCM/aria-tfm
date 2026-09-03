@@ -97,6 +97,32 @@ export function streamChat(channelId: string): EventSource {
   return new EventSource(`${API_URL}/chat/stream/${channelId}`);
 }
 
+export interface StoredMessage {
+  role: "user" | "assistant";
+  content: string;
+  timestamp: string;
+}
+
+export interface ConversationDetail {
+  id: string;
+  title: string | null;
+  messages: StoredMessage[];
+  owner_username: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function fetchConversation(conversationId: string): Promise<ConversationDetail> {
+  const res = await fetch(`${API_URL}/chat/conversations/${conversationId}`, {
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Error ${res.status}: No se pudo cargar la conversación`);
+  }
+  return res.json();
+}
+
 // ─── Documents ────────────────────────────────────────────────────────────────
 
 export async function uploadDocument(

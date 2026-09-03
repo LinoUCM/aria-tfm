@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { sendMessage, streamChat } from "@/lib/api";
+import { useRouter, useSearchParams } from "next/navigation";
+import { sendMessage, streamChat, fetchConversation } from "@/lib/api";
 import toast from "react-hot-toast";
 import {
   Send, Mic, Square, Paperclip, Bot, User,
@@ -62,6 +63,10 @@ export default function ChatPage() {
   const [audioBase64, setAudioBase64] = useState<string | undefined>(undefined);
   const [isRecording, setIsRecording] = useState(false);
 
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -70,6 +75,41 @@ export default function ChatPage() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, activeAgents]);
+
+  useEffect(() => {
+    const urlConversationId = searchParams.get("c");
+    const storedConversationId =
+      typeof window !== "undefined"
+        ? localStorage.getItem("aria_last_conversation_id")
+        : null;
+    const conversationIdToLoad = urlConversationId || storedConversationId;
+
+    if (!conversationIdToLoad) return;
+
+    setIsLoadingHistory(true);
+    fetchConversation(conversationIdToLoad)
+      .then((conv) => {
+        const hydrated: Message[] = conv.messages.map((m, i) => ({
+          id: `${conv.id}-${i}`,
+          role: m.role,
+          content: m.content,
+          timestamp: new Date(m.timestamp),
+        }));
+        if (hydrated.length > 0) {
+          setMessages(hydrated);
+        }
+        setConversationId(conv.id);
+        if (!urlConversationId) {
+          router.replace(`/chat?c=${conv.id}`, { scroll: false });
+        }
+      })
+      .catch((err) => {
+        console.error("No se pudo cargar el historial de la conversación:", err);
+        localStorage.removeItem("aria_last_conversation_id");
+      })
+      .finally(() => setIsLoadingHistory(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
  const handleSend = async (audioBase64Override?: string) => {
   const audio = audioBase64Override ?? audioBase64;
@@ -111,10 +151,16 @@ export default function ChatPage() {
       audio
     );
 
+    const isNewConversation = !conversationId;
     setConversationId(conversation_id);
     setImageBase64(undefined);
     setImagePreview(undefined);
     setAudioBase64(undefined);
+
+    if (isNewConversation) {
+      router.replace(`/chat?c=${conversation_id}`, { scroll: false });
+      localStorage.setItem("aria_last_conversation_id", conversation_id);
+    }
 
     const eventSource = new EventSource(
       `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/chat/stream/${channel_id}`
@@ -295,7 +341,12 @@ export default function ChatPage() {
           </div>
         </div>
         <button
-          onClick={() => { setMessages([messages[0]]); setConversationId(undefined); }}
+          onClick={() => {
+            setMessages([messages[0]]);
+            setConversationId(undefined);
+            localStorage.removeItem("aria_last_conversation_id");
+            router.replace("/chat", { scroll: false });
+          }}
           className="text-xs text-gray-500 hover:text-gray-300 flex items-center gap-1"
         >
           <History className="w-3 h-3" /> New chat
@@ -304,16 +355,24 @@ export default function ChatPage() {
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-6 space-y-6">
-        {messages.map((message) => (
-          <MessageBubble key={message.id} message={message} />
-        ))}
-
-        {/* Active agents indicator */}
-        {activeAgents.length > 0 && (
-          <div className="flex items-center gap-2 text-sm text-gray-400">
-            <Loader2 className="w-4 h-4 animate-spin text-blue-400" />
-            <span>{AGENT_LABELS[activeAgents[activeAgents.length - 1]] || "Processing..."}</span>
+        {isLoadingHistory ? (
+          <div className="h-full flex items-center justify-center">
+            <Loader2 className="w-6 h-6 animate-spin text-blue-400" />
           </div>
+        ) : (
+          <>
+            {messages.map((message) => (
+              <MessageBubble key={message.id} message={message} />
+            ))}
+
+            {/* Active agents indicator */}
+            {activeAgents.length > 0 && (
+              <div className="flex items-center gap-2 text-sm text-gray-400">
+                <Loader2 className="w-4 h-4 animate-spin text-blue-400" />
+                <span>{AGENT_LABELS[activeAgents[activeAgents.length - 1]] || "Processing..."}</span>
+              </div>
+            )}
+          </>
         )}
 
         <div ref={messagesEndRef} />
