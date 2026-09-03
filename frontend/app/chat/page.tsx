@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { sendMessage, streamChat, fetchConversation } from "@/lib/api";
+import { sendMessage, streamChat, fetchConversation, listConversations } from "@/lib/api";
 import toast from "react-hot-toast";
 import {
   Send, Mic, Square, Paperclip, Bot, User,
@@ -77,18 +77,26 @@ export default function ChatPage() {
   }, [messages, activeAgents]);
 
   useEffect(() => {
-    const urlConversationId = searchParams.get("c");
-    const storedConversationId =
-      typeof window !== "undefined"
-        ? localStorage.getItem("aria_last_conversation_id")
-        : null;
-    const conversationIdToLoad = urlConversationId || storedConversationId;
+    async function hydrate() {
+      const urlConversationId = searchParams.get("c");
+      let conversationIdToLoad = urlConversationId;
 
-    if (!conversationIdToLoad) return;
+      if (!conversationIdToLoad) {
+        try {
+          const conversations = await listConversations();
+          if (conversations.length > 0) {
+            conversationIdToLoad = conversations[0].id;
+          }
+        } catch (err) {
+          console.error("No se pudo obtener el historial de conversaciones:", err);
+        }
+      }
 
-    setIsLoadingHistory(true);
-    fetchConversation(conversationIdToLoad)
-      .then((conv) => {
+      if (!conversationIdToLoad) return;
+
+      setIsLoadingHistory(true);
+      try {
+        const conv = await fetchConversation(conversationIdToLoad);
         const hydrated: Message[] = conv.messages.map((m, i) => ({
           id: `${conv.id}-${i}`,
           role: m.role,
@@ -102,12 +110,14 @@ export default function ChatPage() {
         if (!urlConversationId) {
           router.replace(`/chat?c=${conv.id}`, { scroll: false });
         }
-      })
-      .catch((err) => {
+      } catch (err) {
         console.error("No se pudo cargar el historial de la conversación:", err);
-        localStorage.removeItem("aria_last_conversation_id");
-      })
-      .finally(() => setIsLoadingHistory(false));
+      } finally {
+        setIsLoadingHistory(false);
+      }
+    }
+
+    hydrate();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -159,7 +169,6 @@ export default function ChatPage() {
 
     if (isNewConversation) {
       router.replace(`/chat?c=${conversation_id}`, { scroll: false });
-      localStorage.setItem("aria_last_conversation_id", conversation_id);
     }
 
     const eventSource = new EventSource(
@@ -344,7 +353,6 @@ export default function ChatPage() {
           onClick={() => {
             setMessages([messages[0]]);
             setConversationId(undefined);
-            localStorage.removeItem("aria_last_conversation_id");
             router.replace("/chat", { scroll: false });
           }}
           className="text-xs text-gray-500 hover:text-gray-300 flex items-center gap-1"

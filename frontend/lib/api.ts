@@ -123,6 +123,24 @@ export async function fetchConversation(conversationId: string): Promise<Convers
   return res.json();
 }
 
+export interface ConversationSummary {
+  id: string;
+  title: string;
+  updated_at: string | null;
+  created_at: string | null;
+}
+
+export async function listConversations(): Promise<ConversationSummary[]> {
+  const res = await fetch(`${API_URL}/chat/conversations`, {
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Error ${res.status}: No se pudieron cargar las conversaciones`);
+  }
+  return res.json();
+}
+
 // ─── Documents ────────────────────────────────────────────────────────────────
 
 export async function uploadDocument(
