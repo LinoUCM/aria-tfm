@@ -234,7 +234,7 @@ export interface DocumentContentResult {
 
 export async function fetchDocumentContent(docId: string): Promise<DocumentContentResult> {
   const url = `${API_URL}/admin/documents/${docId}/content`;
-  const res = await fetch(url);
+  const res = await fetch(url, { headers: getAuthHeaders() });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.detail || `Error ${res.status}: No se pudo abrir el documento`);

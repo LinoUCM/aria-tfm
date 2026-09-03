@@ -591,6 +591,7 @@ when the evidence points outside our system.
         incident_id: str,
         service: str,
         host: str,
+        resolved_at: str,
         description: str,
         analysis: str,
         engineer: str,
@@ -604,6 +605,7 @@ INFORMACIÓN DEL INCIDENTE:
 - ID Incidente: {incident_id}
 - Servicio Afectado: {service}
 - Host: {host}
+- Fecha/Hora de Resolución: {resolved_at}
 - Descripción: {description}
 - Análisis previo: {analysis}
 
@@ -615,7 +617,10 @@ Genera un documento Markdown bien estructurado con las siguientes secciones:
 # Runbook: [Título optimizado y claro]
 
 ## 1. Contexto del Incidente
-- Incluye metadatos clave (ID, Servicio, Host, Fecha/Hora, Ingeniero).
+- Incluye metadatos clave (ID, Servicio, Host, Ingeniero). Para la
+  Fecha/Hora de Resolución, usa EXACTAMENTE el valor proporcionado en
+  "Fecha/Hora de Resolución" arriba — no inventes una fecha ni uses un
+  formato de ejemplo tipo YYYY-MM-DD, copia el valor real tal cual.
 
 ## 2. Descripción y Causa Raíz
 - Resume qué falló y la causa raíz identificada.

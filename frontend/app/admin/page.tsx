@@ -434,7 +434,12 @@ function DocumentRow({
           </div>
           {(doc.indexed_at || doc.created_at) && (
             <span className="text-xs text-gray-600">
-              {formatDistanceToNow(new Date(doc.indexed_at || doc.created_at), { addSuffix: true })}
+              {(() => {
+                const raw = doc.indexed_at || doc.created_at;
+                const hasTimezone = /Z$|[+-]\d{2}:\d{2}$/.test(raw);
+                const parsed = new Date(hasTimezone ? raw : `${raw}Z`);
+                return formatDistanceToNow(parsed, { addSuffix: true });
+              })()}
             </span>
           )}
           {doc.error_message && (
