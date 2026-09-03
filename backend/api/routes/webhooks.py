@@ -235,7 +235,7 @@ async def execute_incident_remediation(
         incident_id=inc_uuid,
         action_id=payload.action_id,
         target=target_name,
-        executed_by="admin@aria.internal",
+        executed_by=current_user.username,
         status="SUCCESS" if success else "FAILED"
     )
     db.add(audit_entry)
