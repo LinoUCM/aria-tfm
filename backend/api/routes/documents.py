@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
 from core.database import get_db
+from core.security import get_current_user_data, require_roles, TokenData
 from core.config import settings
 from models.database import Document, DocumentStatus, DocumentCategory, DocumentSource
 from models.schemas import (
@@ -36,6 +37,7 @@ async def upload_document(
     category: str = Form(default="other"),
     service_tag: Optional[str] = Form(default=None),
     db: AsyncSession = Depends(get_db),
+    current_user: TokenData = Depends(require_roles(["ADMIN", "ON_CALL"])),
 ):
     # Validate extension
     ext = file.filename.split(".")[-1].lower() if "." in file.filename else ""
@@ -95,6 +97,7 @@ async def add_url(
     request: DocumentURLRequest,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
+    current_user: TokenData = Depends(require_roles(["ADMIN", "ON_CALL"])),
 ):
     doc_id = uuid.uuid4()
     title = request.title or str(request.url)
@@ -135,6 +138,7 @@ async def list_documents(
     status: Optional[str] = None,
     service_tag: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
+    current_user: TokenData = Depends(get_current_user_data),
 ):
     query = select(Document).order_by(Document.created_at.desc())
 
@@ -152,7 +156,11 @@ async def list_documents(
 # ─── Get Single Document ──────────────────────────────────────────────────────
 
 @router.get("/{doc_id}", response_model=DocumentResponse)
-async def get_document(doc_id: UUID, db: AsyncSession = Depends(get_db)):
+async def get_document(
+    doc_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: TokenData = Depends(get_current_user_data),
+):
     doc = await _get_doc_or_404(doc_id, db)
     return doc
 
@@ -160,7 +168,11 @@ async def get_document(doc_id: UUID, db: AsyncSession = Depends(get_db)):
 # ─── Get Document Content (view / open) ──────────────────────────────────────
 
 @router.get("/{doc_id}/content")
-async def get_document_content(doc_id: UUID, db: AsyncSession = Depends(get_db)):
+async def get_document_content(
+    doc_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: TokenData = Depends(get_current_user_data),
+):
     # Mismo patrón de consulta + 404 que usa GET /{doc_id} en este mismo archivo
     doc = await _get_doc_or_404(doc_id, db)
 
@@ -204,6 +216,7 @@ async def reindex_document(
     doc_id: UUID,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
+    current_user: TokenData = Depends(require_roles(["ADMIN", "ON_CALL"])),
 ):
     doc = await _get_doc_or_404(doc_id, db)
     # Borrar vectores antiguos en ChromaDB antes de volver a indexar
@@ -234,7 +247,11 @@ async def reindex_document(
 # ─── Delete ──────────────────────────────────────────────────────────────────
 
 @router.delete("/{doc_id}")
-async def delete_document(doc_id: UUID, db: AsyncSession = Depends(get_db)):
+async def delete_document(
+    doc_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: TokenData = Depends(require_roles(["ADMIN", "ON_CALL"])),
+):
     doc = await _get_doc_or_404(doc_id, db)
 
     # Remove from ChromaDB
@@ -254,7 +271,10 @@ async def delete_document(doc_id: UUID, db: AsyncSession = Depends(get_db)):
 # ─── KB Stats ────────────────────────────────────────────────────────────────
 
 @router.get("/stats/summary", response_model=KBStatsResponse)
-async def get_kb_stats(db: AsyncSession = Depends(get_db)):
+async def get_kb_stats(
+    db: AsyncSession = Depends(get_db),
+    current_user: TokenData = Depends(get_current_user_data),
+):
     total_result = await db.execute(select(func.count(Document.id)))
     total = total_result.scalar()
 
