@@ -22,6 +22,7 @@ export const TopologyMap: React.FC<TopologyMapProps> = ({
     { id: 'web-frontend', label: 'Web Frontend', sublabel: 'React App', x: 40, y: 85 },
     { id: 'api-gateway', label: 'API Gateway', sublabel: 'FastAPI / Envoy', x: 240, y: 85 },
     { id: 'payment-service', label: 'payment-service', sublabel: 'Microservicio', x: 460, y: 35 },
+    { id: 'notification-service', label: 'notification-service', sublabel: 'Microservicio', x: 460, y: 85 },
     { id: 'checkout-service', label: 'checkout-service', sublabel: 'Microservicio', x: 460, y: 135 },
     { id: 'aria_db', label: 'aria_db', sublabel: 'PostgreSQL DB', x: 680, y: 35 },
     { id: 'redis-cache', label: 'redis-cache', sublabel: 'Redis Cluster', x: 680, y: 135 },
@@ -31,6 +32,7 @@ export const TopologyMap: React.FC<TopologyMapProps> = ({
   const connections = [
     { from: 'web-frontend', to: 'api-gateway' },
     { from: 'api-gateway', to: 'payment-service' },
+    { from: 'api-gateway', to: 'notification-service' },
     { from: 'api-gateway', to: 'checkout-service' },
     { from: 'payment-service', to: 'aria_db' },
     { from: 'checkout-service', to: 'redis-cache' },
