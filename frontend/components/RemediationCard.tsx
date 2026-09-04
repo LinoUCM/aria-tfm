@@ -3,44 +3,39 @@ import { executeRemediation } from '@/lib/api';
 
 interface RemediationProps {
   incidentId: string;
-  analysisText: string;
+  suggestedAction?: string | null;
   onResolved: () => void;
 }
 
-// Mapeo automático de comandos sugeridos por ARIA a Playbooks autorizados
-const detectPlaybook = (text: string) => {
-  if (text.includes("FLUSH_REDIS_CACHE") || text.includes("aria-redis-1")) {
-    return {
-      actionId: "FLUSH_REDIS_CACHE",
-      title: "Purga de Caché Redis",
-      target: "aria-redis-1",
-      risk: "LOW",
-      params: { container_name: "aria-redis-1" }
-    };
-  }
-  if (text.includes("docker restart aria-postgres-1") || text.includes("RESTART_CONTAINER")) {
-    return {
-      actionId: "RESTART_CONTAINER",
-      title: "Reiniciar PostgreSQL",
-      target: "aria-postgres-1",
-      risk: "MEDIUM",
-      params: { container_name: "aria-postgres-1" }
-    };
-  }
-  if (text.includes("TERMINATE_IDLE_CONNECTIONS") || text.includes("pg_terminate_backend")) {
-    return {
-      actionId: "TERMINATE_IDLE_CONNECTIONS",
-      title: "Terminar Conexiones Inactivas",
-      target: "aria_db",
-      risk: "LOW",
-      params: { database_name: "aria_db" }
-    };
-  }
-  return null;
+// Playbooks autorizados, ahora seleccionados por el campo estructurado
+// suggested_action que devuelve el backend (ver orchestrator.py), no por
+// coincidencia de texto libre (pendiente 8.1).
+const PLAYBOOKS: Record<string, { actionId: string; title: string; target: string; risk: string; params: Record<string, string> }> = {
+  FLUSH_REDIS_CACHE: {
+    actionId: "FLUSH_REDIS_CACHE",
+    title: "Purga de Caché Redis",
+    target: "aria-redis-1",
+    risk: "LOW",
+    params: { container_name: "aria-redis-1" }
+  },
+  RESTART_CONTAINER: {
+    actionId: "RESTART_CONTAINER",
+    title: "Reiniciar PostgreSQL",
+    target: "aria-postgres-1",
+    risk: "MEDIUM",
+    params: { container_name: "aria-postgres-1" }
+  },
+  TERMINATE_IDLE_CONNECTIONS: {
+    actionId: "TERMINATE_IDLE_CONNECTIONS",
+    title: "Terminar Conexiones Inactivas",
+    target: "aria_db",
+    risk: "LOW",
+    params: { database_name: "aria_db" }
+  },
 };
 
-export const RemediationCard: React.FC<RemediationProps> = ({ incidentId, analysisText, onResolved }) => {
-  const playbook = detectPlaybook(analysisText);
+export const RemediationCard: React.FC<RemediationProps> = ({ incidentId, suggestedAction, onResolved }) => {
+  const playbook = suggestedAction ? PLAYBOOKS[suggestedAction] : undefined;
   const [loading, setLoading] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [resultMessage, setResultMessage] = useState<string | null>(null);

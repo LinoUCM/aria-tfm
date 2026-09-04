@@ -550,10 +550,22 @@ NODES), you MUST use the literal value "external" for both fields instead of
 guessing or forcing an internal node. Do not force a match to an internal node
 when the evidence points outside our system.
 
+Additionally, if — and ONLY if — one of the following pre-approved automated
+remediation actions would directly and safely resolve this specific incident,
+include its exact action_id as "suggested_action". If no listed action
+clearly applies, or you are not confident it is the correct fix, use the
+literal value null. Do not force a match.
+
+- "RESTART_CONTAINER": restarting a specific hung or crashed Docker container.
+- "TERMINATE_IDLE_CONNECTIONS": terminating idle/stale database connections
+  that are exhausting the connection pool.
+- "FLUSH_REDIS_CACHE": purging a corrupted or bloated Redis cache.
+
 ```json
 {{
   "root_cause": "<node_id_or_external>",
-  "service_affected": "<node_id_or_external>"
+  "service_affected": "<node_id_or_external>",
+  "suggested_action": "<RESTART_CONTAINER|TERMINATE_IDLE_CONNECTIONS|FLUSH_REDIS_CACHE|null>"
 }}
 ```"""
 
@@ -567,6 +579,8 @@ when the evidence points outside our system.
         # Extraemos el JSON estructurado del final del análisis para el backend/frontend
         root_cause = service
         service_affected = service
+        suggested_action = None
+        ALLOWED_SUGGESTED_ACTIONS = {"RESTART_CONTAINER", "TERMINATE_IDLE_CONNECTIONS", "FLUSH_REDIS_CACHE"}
 
         try:
             if "```json" in full_response:
@@ -574,13 +588,17 @@ when the evidence points outside our system.
                 data = json.loads(json_str)
                 root_cause = data.get("root_cause", service)
                 service_affected = data.get("service_affected", service)
+                candidate_action = data.get("suggested_action")
+                if candidate_action in ALLOWED_SUGGESTED_ACTIONS:
+                    suggested_action = candidate_action
         except Exception as e:
             logger.warning("rca_json_parsing_failed", error=str(e))
 
         return {
             "analysis": full_response,
             "root_cause": root_cause,
-            "service_affected": service_affected
+            "service_affected": service_affected,
+            "suggested_action": suggested_action
         }
 
     # ─── Runbook & Post-Mortem Synthesis ────────────────────────────────────────

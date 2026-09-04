@@ -125,6 +125,7 @@ class Incident(Base):
     severity = Column(SAEnum(IncidentSeverity), default=IncidentSeverity.MEDIUM)
     status = Column(SAEnum(IncidentStatus), default=IncidentStatus.OPEN)
     service_affected = Column(String(255))
+    suggested_action = Column(String(50), nullable=True)  # RESTART_CONTAINER | TERMINATE_IDLE_CONNECTIONS | FLUSH_REDIS_CACHE | null
     host = Column(String(255))
     tags = Column(JSON, default=list)            # ["service:payment", "env:prod"]
     metrics = Column(JSON, default=dict)         # métricas del webhook

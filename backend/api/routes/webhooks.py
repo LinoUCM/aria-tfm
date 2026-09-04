@@ -109,6 +109,7 @@ async def get_incidents(
             "tags": inc.tags or [],
             "metrics": inc.metrics or {},
             "analysis": getattr(inc, "analysis", None),
+            "suggested_action": getattr(inc, "suggested_action", None),
             "postmortem_filename": getattr(inc, "postmortem_filename", None),
             "created_at": f"{inc.created_at.isoformat()}Z" if inc.created_at else None,
         }
@@ -470,6 +471,9 @@ async def _analyze_incident_async(incident_id: str, payload_dict: dict):
                 if real_root_cause and real_root_cause != "unknown":
                     inc.service_affected = real_root_cause
 
+                # ✅ Campo estructurado de remediación sugerida (pendiente 8.1)
+                inc.suggested_action = analysis_result.get("suggested_action")
+
                 await db.commit()
 
                 # Notificamos al frontend por SSE para que actualice la UI dinámicamente
@@ -487,6 +491,7 @@ async def _analyze_incident_async(incident_id: str, payload_dict: dict):
                     "tags": inc.tags or [],
                     "metrics": inc.metrics or {},
                     "analysis": inc.analysis,
+                    "suggested_action": inc.suggested_action,
                     "created_at": f"{inc.created_at.isoformat()}Z" if inc.created_at else None,
                 })
 

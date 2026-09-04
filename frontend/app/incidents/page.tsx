@@ -27,6 +27,7 @@ interface Incident {
   tags: string[];
   metrics: Record<string, number>;
   analysis?: any;
+  suggested_action?: string | null;
   has_postmortem?: boolean;
   postmortem_filename?: string | null; // <--- Añadir esta línea
   created_at: string;
@@ -447,7 +448,7 @@ export default function IncidentsPage() {
                           {!isResolved && (
                             <RemediationCard
                               incidentId={incident.id}
-                              analysisText={analysisText}
+                              suggestedAction={incident.suggested_action}
                               onResolved={() => {
                                 setIncidents((prev) =>
                                   prev.map((i) => (i.id === incident.id ? { ...i, status: "RESOLVED" } : i))
