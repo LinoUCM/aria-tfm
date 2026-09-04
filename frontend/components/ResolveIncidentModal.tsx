@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Check, Loader2, X, Sparkles } from "lucide-react";
 import { resolveIncident } from "@/lib/api";
+import { getCurrentUser } from "@/lib/auth";
 
 interface ResolveIncidentModalProps {
   isOpen: boolean;
@@ -20,11 +21,12 @@ export function ResolveIncidentModal({
   onSuccess,
 }: ResolveIncidentModalProps) {
   const [notes, setNotes] = useState("");
-  const [executedBy, setExecutedBy] = useState("admin@aria.internal");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   if (!isOpen || !incidentId) return null;
+
+  const currentUser = getCurrentUser();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -34,7 +36,7 @@ export function ResolveIncidentModal({
     setError(null);
 
     try {
-      await resolveIncident(incidentId, notes, executedBy);
+      await resolveIncident(incidentId, notes);
 
       setNotes("");
       onSuccess(incidentId);
@@ -88,12 +90,9 @@ export function ResolveIncidentModal({
             <label className="block text-xs font-medium text-gray-300 mb-1.5">
               Ingeniero / Operador
             </label>
-            <input
-              type="text"
-              value={executedBy}
-              onChange={(e) => setExecutedBy(e.target.value)}
-              className="w-full bg-gray-950 border border-gray-800 rounded-lg p-2.5 text-xs text-gray-200 focus:outline-none focus:border-blue-500"
-            />
+            <div className="w-full bg-gray-950 border border-gray-800 rounded-lg p-2.5 text-xs text-gray-400">
+              {currentUser?.full_name || currentUser?.username || "Usuario no identificado"}
+            </div>
           </div>
 
           {error && (

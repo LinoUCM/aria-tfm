@@ -342,15 +342,13 @@ export async function fetchAuditLogs(): Promise<AuditLog[]> {
 
 export async function resolveIncident(
   id: string,
-  resolutionNotes: string,
-  executedBy: string
+  resolutionNotes: string
 ): Promise<void> {
   const res = await fetch(`${API_URL}/incidents/${id}/resolve`, {
     method: "POST",
     headers: getAuthHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({
       resolution_notes: resolutionNotes,
-      executed_by: executedBy,
     }),
   });
   if (!res.ok) throw new Error(`Error ${res.status}: No se pudo procesar la resolución`);

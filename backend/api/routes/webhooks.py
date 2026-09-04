@@ -21,7 +21,7 @@ from models.schemas import DatadogWebhookPayload
 from services.sse_manager import sse_manager
 from data.datadog_presets import get_preset_with_timestamp, list_presets
 from services.remediation import remediation_service
-from core.security import require_roles, TokenData
+from core.security import require_roles, get_current_user_data, TokenData
 
 logger = structlog.get_logger()
 router = APIRouter(tags=["Webhooks & Simulator"])
@@ -89,6 +89,7 @@ async def _send_n8n_notification(incident_id: str, payload_dict: dict):
 async def get_incidents(
     limit: int = 50,
     db: AsyncSession = Depends(get_db),
+    current_user: TokenData = Depends(get_current_user_data),
 ):
     """Obtiene la lista de incidentes almacenados en PostgreSQL."""
     result = await db.execute(
@@ -339,6 +340,7 @@ async def update_incident_status(
     incident_id: str,
     body: StatusUpdate,
     db: AsyncSession = Depends(get_db),
+    current_user: TokenData = Depends(require_roles(["ADMIN", "ON_CALL"])),
 ):
     try:
         inc_uuid = uuid.UUID(incident_id)
@@ -376,6 +378,7 @@ async def update_incident_status(
 async def get_audit_logs(
     limit: int = 50,
     db: AsyncSession = Depends(get_db),
+    current_user: TokenData = Depends(get_current_user_data),
 ):
     result = await db.execute(
         select(AuditLog).order_by(AuditLog.timestamp.desc()).limit(limit)
@@ -494,7 +497,6 @@ async def _analyze_incident_async(incident_id: str, payload_dict: dict):
 
 class ResolveFeedbackRequest(BaseModel):
     resolution_notes: str
-    executed_by: str = "admin@aria.internal"
 
 
 @router.post("/incidents/{incident_id}/resolve")
@@ -502,6 +504,7 @@ async def resolve_incident_with_feedback(
     incident_id: str,
     payload: ResolveFeedbackRequest,
     db: AsyncSession = Depends(get_db),
+    current_user: TokenData = Depends(require_roles(["ADMIN", "ON_CALL"])),
 ):
     try:
         inc_uuid = uuid.UUID(incident_id)
@@ -525,7 +528,7 @@ async def resolve_incident_with_feedback(
         resolved_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
         description=incident.description or "Sin descripción",
         analysis=getattr(incident, "analysis", "N/A"),
-        engineer=payload.executed_by,
+        engineer=current_user.username,
         notes=payload.resolution_notes,
     )
 
@@ -577,7 +580,7 @@ async def resolve_incident_with_feedback(
         incident_id=incident.id,
         action_id="MANUAL_RESOLUTION_WITH_FEEDBACK",
         target=incident.service_affected or "unknown",
-        executed_by=payload.executed_by,
+        executed_by=current_user.username,
         status="SUCCESS",
         details=payload.resolution_notes,
     )
