@@ -321,15 +321,9 @@ export interface AuditLog {
 }
 
 export async function fetchAuditLogs(): Promise<AuditLog[]> {
-  const token = typeof window !== "undefined" ? localStorage.getItem("aria_token") : null;
-  const API_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
-
-  const res = await fetch(`${API_BASE_URL}/audit-logs`, {
+  const res = await fetch(`${API_URL}/audit-logs`, {
     cache: "no-store",
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
+    headers: getAuthHeaders({ "Content-Type": "application/json" }),
   });
 
   if (!res.ok) {
