@@ -50,6 +50,16 @@ export default function Navigation() {
     (item) => !item.roles || (currentUser?.role && item.roles.includes(currentUser.role.toUpperCase()))
   );
 
+  // Evita que un item padre (p.ej. /admin) se marque activo a la vez que un
+  // item hijo más específico (p.ej. /admin/users) cuando ambos son prefijo
+  // de la ruta actual — nos quedamos solo con el prefijo más largo.
+  const activeHref = visibleNavItems.reduce<string | null>((best, item) => {
+    if (pathname.startsWith(item.href) && (!best || item.href.length > best.length)) {
+      return item.href;
+    }
+    return best;
+  }, null);
+
   return (
     <aside className="fixed left-0 top-0 h-full w-64 bg-gray-900 border-r border-gray-800 flex flex-col z-50">
       {/* Logo */}
@@ -68,13 +78,13 @@ export default function Navigation() {
       {/* Nav Items */}
       <nav className="flex-1 p-4 space-y-1">
         {visibleNavItems.map((item) => {
-          const isActive = pathname.startsWith(item.href);
+          const isActive = item.href === activeHref;
           return (
             <Link
               key={item.href}
               href={item.href}
               className={clsx(
-                "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all group",
+                "flex items-center gap-3 px-3 py-2.5 rounded-lg group",
                 isActive
                   ? "bg-blue-600/20 text-blue-400 border border-blue-500/30"
                   : "text-gray-400 hover:text-gray-100 hover:bg-gray-800"
