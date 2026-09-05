@@ -2,11 +2,15 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { sendMessage, streamChat, fetchConversation, listConversations } from "@/lib/api";
+import {
+  sendMessage, streamChat, fetchConversation, listConversations,
+  ConversationSummary, ConversationDetail,
+} from "@/lib/api";
+import { formatDistanceToNow } from "date-fns";
 import toast from "react-hot-toast";
 import {
   Send, Mic, Square, Paperclip, Bot, User,
-  Loader2, AlertCircle, BookOpen, History
+  Loader2, AlertCircle, BookOpen, History, MessageSquare
 } from "lucide-react";
 import { clsx } from "clsx";
 
@@ -45,15 +49,36 @@ const AGENT_LABELS: Record<string, string> = {
   synthesis: "✍️ Generating",
 };
 
+const WELCOME_MESSAGE: Message = {
+  id: "welcome",
+  role: "assistant",
+  content:
+    "Hi, I'm **ARIA** — your Operations Intelligence assistant.\n\nI can help you:\n- Diagnose incidents and alerts\n- Search your knowledge base\n- Analyze screenshots and logs\n- Find similar past incidents\n\nDescribe your issue or paste an error message to get started.",
+  timestamp: new Date(),
+};
+
+// Mapea los mensajes almacenados de una conversación al tipo Message del chat.
+// Reutilizado por la hidratación inicial y por la selección desde el historial.
+function mapConversationMessages(conv: ConversationDetail): Message[] {
+  return conv.messages.map((m, i) => ({
+    id: `${conv.id}-${i}`,
+    role: m.role,
+    content: m.content,
+    timestamp: new Date(m.timestamp),
+  }));
+}
+
+// El backend serializa updated_at con datetime.utcnow().isoformat(), sin sufijo
+// de zona horaria; lo normalizamos a UTC para que el navegador no lo interprete
+// como hora local (mismo criterio que admin/page.tsx).
+function formatRelative(iso: string | null): string {
+  if (!iso) return "";
+  const hasTimezone = /Z$|[+-]\d{2}:\d{2}$/.test(iso);
+  return formatDistanceToNow(new Date(hasTimezone ? iso : `${iso}Z`), { addSuffix: true });
+}
+
 export default function ChatPage() {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: "welcome",
-      role: "assistant",
-      content: "Hi, I'm **ARIA** — your Operations Intelligence assistant.\n\nI can help you:\n- Diagnose incidents and alerts\n- Search your knowledge base\n- Analyze screenshots and logs\n- Find similar past incidents\n\nDescribe your issue or paste an error message to get started.",
-      timestamp: new Date(),
-    },
-  ]);
+  const [messages, setMessages] = useState<Message[]>([WELCOME_MESSAGE]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [activeAgents, setActiveAgents] = useState<string[]>([]);
@@ -66,11 +91,42 @@ export default function ChatPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+
+  // Recarga la lista de conversaciones del usuario (silencioso ante error,
+  // igual que el resto de fetches de este archivo). Devuelve la lista para
+  // que la hidratación inicial pueda usarla sin una segunda petición.
+  const refreshConversations = async (): Promise<ConversationSummary[]> => {
+    try {
+      const list = await listConversations();
+      setConversations(list);
+      return list;
+    } catch (err) {
+      console.error("No se pudo cargar el historial de conversaciones:", err);
+      return [];
+    }
+  };
+
+  const handleSelectConversation = async (id: string) => {
+    setIsLoadingHistory(true);
+    try {
+      const conv = await fetchConversation(id);
+      setMessages(conv.messages.length > 0 ? mapConversationMessages(conv) : [WELCOME_MESSAGE]);
+      setConversationId(id);
+      router.replace(`/chat?c=${id}`, { scroll: false });
+      setIsHistoryOpen(false);
+    } catch (err) {
+      console.error("No se pudo cargar la conversación seleccionada:", err);
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  };
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -81,15 +137,11 @@ export default function ChatPage() {
       const urlConversationId = searchParams.get("c");
       let conversationIdToLoad = urlConversationId;
 
-      if (!conversationIdToLoad) {
-        try {
-          const conversations = await listConversations();
-          if (conversations.length > 0) {
-            conversationIdToLoad = conversations[0].id;
-          }
-        } catch (err) {
-          console.error("No se pudo obtener el historial de conversaciones:", err);
-        }
+      // Puebla el estado `conversations` para el panel de historial, y de paso
+      // nos da la lista para elegir la más reciente si no hay id en la URL.
+      const list = await refreshConversations();
+      if (!conversationIdToLoad && list.length > 0) {
+        conversationIdToLoad = list[0].id;
       }
 
       if (!conversationIdToLoad) return;
@@ -97,12 +149,7 @@ export default function ChatPage() {
       setIsLoadingHistory(true);
       try {
         const conv = await fetchConversation(conversationIdToLoad);
-        const hydrated: Message[] = conv.messages.map((m, i) => ({
-          id: `${conv.id}-${i}`,
-          role: m.role,
-          content: m.content,
-          timestamp: new Date(m.timestamp),
-        }));
+        const hydrated = mapConversationMessages(conv);
         if (hydrated.length > 0) {
           setMessages(hydrated);
         }
@@ -237,6 +284,9 @@ export default function ChatPage() {
             setIsLoading(false);
             setActiveAgents([]);
             eventSource.close();
+            // El backend fija/actualiza el título y updated_at de forma
+            // asíncrona tras el intercambio; refrescamos para reflejarlo.
+            refreshConversations();
             break;
 
           case "error":
@@ -349,16 +399,58 @@ export default function ChatPage() {
             </p>
           </div>
         </div>
-        <button
-          onClick={() => {
-            setMessages([messages[0]]);
-            setConversationId(undefined);
-            router.replace("/chat", { scroll: false });
-          }}
-          className="text-xs text-gray-500 hover:text-gray-300 flex items-center gap-1"
-        >
-          <History className="w-3 h-3" /> New chat
-        </button>
+        <div className="relative flex items-center gap-3">
+          <button
+            onClick={() => setIsHistoryOpen((v) => !v)}
+            className={clsx(
+              "text-xs flex items-center gap-1 transition-colors",
+              isHistoryOpen ? "text-blue-400" : "text-gray-500 hover:text-gray-300"
+            )}
+            title="Conversation history"
+          >
+            <MessageSquare className="w-3 h-3" /> History
+          </button>
+
+          <button
+            onClick={() => {
+              setMessages([WELCOME_MESSAGE]);
+              setConversationId(undefined);
+              setIsHistoryOpen(false);
+              router.replace("/chat", { scroll: false });
+            }}
+            className="text-xs text-gray-500 hover:text-gray-300 flex items-center gap-1"
+          >
+            <History className="w-3 h-3" /> New chat
+          </button>
+
+          {isHistoryOpen && (
+            <div className="absolute right-0 top-full mt-3 w-80 max-h-96 overflow-y-auto bg-gray-900 border border-gray-800 rounded-xl shadow-2xl z-50 py-1">
+              {conversations.length === 0 ? (
+                <div className="px-4 py-3 text-xs text-gray-500">
+                  No conversations yet.
+                </div>
+              ) : (
+                conversations.map((c) => (
+                  <button
+                    key={c.id}
+                    onClick={() => handleSelectConversation(c.id)}
+                    className={clsx(
+                      "w-full text-left px-4 py-2.5 flex flex-col gap-0.5 hover:bg-gray-800 transition-colors",
+                      c.id === conversationId && "bg-blue-600/10 border-l-2 border-blue-500"
+                    )}
+                  >
+                    <span className="text-sm text-gray-200 truncate">
+                      {c.title || "New conversation"}
+                    </span>
+                    <span className="text-xs text-gray-500">
+                      {formatRelative(c.updated_at)}
+                    </span>
+                  </button>
+                ))
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Messages */}

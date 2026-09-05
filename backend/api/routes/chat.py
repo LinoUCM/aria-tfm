@@ -44,6 +44,7 @@ async def chat(
         conversation = Conversation(
             id=uuid.uuid4(),
             incident_id=request.incident_id,
+            title=request.message[:80],
             owner_username=current_user.username,
             messages=[],
             agents_used=[],
@@ -102,7 +103,7 @@ async def list_conversations(
     return [
         {
             "id": str(c.id),
-            "title": c.title or "Nueva conversación",
+            "title": c.title or "New conversation",
             "updated_at": c.updated_at.isoformat() if c.updated_at else None,
             "created_at": c.created_at.isoformat() if c.created_at else None,
         }
