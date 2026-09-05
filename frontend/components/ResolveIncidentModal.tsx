@@ -42,7 +42,7 @@ export function ResolveIncidentModal({
       onSuccess(incidentId);
       onClose();
     } catch (err: any) {
-      setError(err.message || "Error conectando con ARIA");
+      setError(err.message || "Error connecting to ARIA");
     } finally {
       setLoading(false);
     }
@@ -60,7 +60,7 @@ export function ResolveIncidentModal({
         <div className="flex items-center justify-between border-b border-gray-800 pb-3">
           <div className="flex items-center gap-2 text-white font-semibold text-base">
             <Sparkles className="w-4 h-4 text-blue-400" />
-            <span>Resolver Incidente & Feedback RAG</span>
+            <span>Resolve Incident & RAG Feedback</span>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-white p-1">
             <X className="w-4 h-4" />
@@ -68,30 +68,30 @@ export function ResolveIncidentModal({
         </div>
 
         <p className="text-xs text-gray-400">
-          Incidente: <span className="font-mono text-gray-200">{incidentTitle || incidentId}</span>
+          Incident: <span className="font-mono text-gray-200">{incidentTitle || incidentId}</span>
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-xs font-medium text-gray-300 mb-1.5">
-              ¿Cómo resolviste el problema? (Notas para el auto-aprendizaje de ARIA)
+              How did you resolve the problem? (Notes for ARIA's self-learning)
             </label>
             <textarea
               required
               rows={4}
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="Ej: Se reinició el contenedor de Redis, se eliminaron claves corruptas y se ajustó el límite de memoria a 2GB."
+              placeholder="E.g.: Restarted the Redis container, removed corrupted keys, and raised the memory limit to 2GB."
               className="w-full bg-gray-950 border border-gray-800 rounded-lg p-3 text-xs text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
             />
           </div>
 
           <div>
             <label className="block text-xs font-medium text-gray-300 mb-1.5">
-              Ingeniero / Operador
+              Engineer / Operator
             </label>
             <div className="w-full bg-gray-950 border border-gray-800 rounded-lg p-2.5 text-xs text-gray-400">
-              {currentUser?.full_name || currentUser?.username || "Usuario no identificado"}
+              {currentUser?.full_name || currentUser?.username || "Unidentified user"}
             </div>
           </div>
 
@@ -108,7 +108,7 @@ export function ResolveIncidentModal({
               disabled={loading}
               className="px-4 py-2 rounded-lg text-xs font-medium text-gray-400 hover:bg-gray-800 transition"
             >
-              Cancelar
+              Cancel
             </button>
             <button
               type="submit"
@@ -117,11 +117,11 @@ export function ResolveIncidentModal({
             >
               {loading ? (
                 <>
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" /> Sintetizando & Indexando...
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" /> Synthesizing & Indexing...
                 </>
               ) : (
                 <>
-                  <Check className="w-3.5 h-3.5" /> Resolver y Vectorizar
+                  <Check className="w-3.5 h-3.5" /> Resolve & Vectorize
                 </>
               )}
             </button>

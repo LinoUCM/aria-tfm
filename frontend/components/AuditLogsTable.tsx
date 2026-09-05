@@ -33,32 +33,32 @@ export default function AuditLogsTable() {
     <div className="p-6 bg-gray-900 text-white rounded-xl shadow-lg border border-gray-800">
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h2 className="text-xl font-bold tracking-wide">Audit Trail / Historial de Remediación</h2>
-          <p className="text-sm text-gray-400">Registro inmutable de acciones automáticas y manuales</p>
+          <h2 className="text-xl font-bold tracking-wide">Audit Trail / Remediation History</h2>
+          <p className="text-sm text-gray-400">Immutable record of automatic and manual actions</p>
         </div>
         <button
           onClick={loadLogs}
           className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-xs font-semibold rounded-lg border border-gray-700 transition flex items-center gap-2"
         >
-          🔄 Actualizar
+          🔄 Refresh
         </button>
       </div>
 
       {loading ? (
-        <div className="text-center py-8 text-gray-500">Cargando registros...</div>
+        <div className="text-center py-8 text-gray-500">Loading records...</div>
       ) : logs.length === 0 ? (
-        <div className="text-center py-8 text-gray-500">No hay registros de auditoría aún.</div>
+        <div className="text-center py-8 text-gray-500">No audit records yet.</div>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm text-gray-300">
             <thead className="bg-gray-800/60 text-gray-400 uppercase text-xs">
               <tr>
-                <th className="p-3">Fecha / Hora</th>
-                <th className="p-3">ID Incidente</th>
-                <th className="p-3">Acción</th>
-                <th className="p-3">Objetivo</th>
-                <th className="p-3">Ejecutado Por</th>
-                <th className="p-3">Estado</th>
+                <th className="p-3">Date / Time</th>
+                <th className="p-3">Incident ID</th>
+                <th className="p-3">Action</th>
+                <th className="p-3">Target</th>
+                <th className="p-3">Executed By</th>
+                <th className="p-3">Status</th>
                 <th className="p-3 w-10"></th>
               </tr>
             </thead>
@@ -106,7 +106,7 @@ export default function AuditLogsTable() {
                           <div className="space-y-3">
                             <div>
                               <div className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">
-                                ID Incidente completo
+                                Full Incident ID
                               </div>
                               <div className="font-mono text-xs text-blue-300 break-all">
                                 {log.incident_id}
@@ -115,14 +115,14 @@ export default function AuditLogsTable() {
 
                             <div>
                               <div className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">
-                                Notas de resolución:
+                                Resolution notes:
                               </div>
                               {log.details && log.details.trim() ? (
                                 <p className="text-sm text-gray-200 whitespace-pre-wrap bg-gray-900 border border-gray-800 rounded-lg p-3">
                                   {log.details}
                                 </p>
                               ) : (
-                                <p className="text-xs text-gray-600 italic">Sin notas adicionales</p>
+                                <p className="text-xs text-gray-600 italic">No additional notes</p>
                               )}
                             </div>
                           </div>

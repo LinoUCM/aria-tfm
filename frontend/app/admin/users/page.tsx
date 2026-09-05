@@ -37,11 +37,11 @@ export default function UsersAdminPage() {
       setUsers(data);
     } catch (err: any) {
       if (String(err.message).includes("403")) {
-        toast.error("No tienes permisos de Administrador para ver esta sección");
+        toast.error("You don't have Administrator permissions to view this section");
         router.push("/chat");
         return;
       }
-      toast.error(err.message || "Error al cargar la lista de usuarios");
+      toast.error(err.message || "Failed to load the user list");
     } finally {
       setLoading(false);
     }
@@ -63,7 +63,7 @@ const handleCreateUser = async (e: React.FormEvent) => {
         role,
       });
 
-      toast.success("Usuario creado correctamente");
+      toast.success("User created successfully");
       setShowModal(false);
       setUsername("");
       setEmail("");
@@ -81,7 +81,7 @@ const handleCreateUser = async (e: React.FormEvent) => {
   const handleToggleActive = async (user: UserItem) => {
     try {
       await updateUser(user.id, { is_active: !user.is_active });
-      toast.success(`Usuario ${user.is_active ? "desactivado" : "activado"}`);
+      toast.success(`User ${user.is_active ? "deactivated" : "activated"}`);
       fetchUsers();
     } catch (err: any) {
       toast.error(err.message);
@@ -91,7 +91,7 @@ const handleCreateUser = async (e: React.FormEvent) => {
   const handleChangeRole = async (userId: string, newRole: string) => {
     try {
       await updateUser(userId, { role: newRole });
-      toast.success("Rol actualizado");
+      toast.success("Role updated");
       fetchUsers();
     } catch (err: any) {
       toast.error(err.message);
@@ -102,15 +102,15 @@ const handleCreateUser = async (e: React.FormEvent) => {
     <div className="p-8 max-w-7xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-100">Gestión de Usuarios</h1>
-          <p className="text-slate-400 text-sm">Control de acceso y administración de roles del equipo</p>
+          <h1 className="text-2xl font-bold text-slate-100">User Management</h1>
+          <p className="text-slate-400 text-sm">Access control and team role administration</p>
         </div>
         <button
           onClick={() => setShowModal(true)}
           className="bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium px-4 py-2.5 rounded-lg flex items-center gap-2 transition-all shadow-lg shadow-blue-600/20"
         >
           <UserPlus className="w-4 h-4" />
-          <span>Nuevo Usuario</span>
+          <span>New User</span>
         </button>
       </div>
 
@@ -123,11 +123,11 @@ const handleCreateUser = async (e: React.FormEvent) => {
           <table className="w-full text-left text-sm text-slate-300">
             <thead className="bg-slate-950 text-slate-400 uppercase text-xs border-b border-slate-800">
               <tr>
-                <th className="px-6 py-4">Usuario</th>
+                <th className="px-6 py-4">User</th>
                 <th className="px-6 py-4">Email</th>
-                <th className="px-6 py-4">Rol</th>
-                <th className="px-6 py-4">Estado</th>
-                <th className="px-6 py-4 text-right">Acciones</th>
+                <th className="px-6 py-4">Role</th>
+                <th className="px-6 py-4">Status</th>
+                <th className="px-6 py-4 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60">
@@ -158,7 +158,7 @@ const handleCreateUser = async (e: React.FormEvent) => {
                       }`}
                     >
                       {u.is_active ? <CheckCircle className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
-                      {u.is_active ? "Activo" : "Inactivo"}
+                      {u.is_active ? "Active" : "Inactive"}
                     </span>
                   </td>
                   <td className="px-6 py-4 text-right">
@@ -166,7 +166,7 @@ const handleCreateUser = async (e: React.FormEvent) => {
                       onClick={() => handleToggleActive(u)}
                       className="text-xs text-slate-400 hover:text-slate-200 underline"
                     >
-                      {u.is_active ? "Desactivar" : "Activar"}
+                      {u.is_active ? "Deactivate" : "Activate"}
                     </button>
                   </td>
                 </tr>
@@ -180,10 +180,10 @@ const handleCreateUser = async (e: React.FormEvent) => {
       {showModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 w-full max-w-md shadow-2xl">
-            <h2 className="text-lg font-bold text-slate-100 mb-4">Registrar Nuevo Usuario</h2>
+            <h2 className="text-lg font-bold text-slate-100 mb-4">Register New User</h2>
             <form onSubmit={handleCreateUser} className="space-y-4">
               <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1">Nombre de usuario</label>
+                <label className="block text-xs font-medium text-slate-400 mb-1">Username</label>
                 <input
                   type="text"
                   required
@@ -193,7 +193,7 @@ const handleCreateUser = async (e: React.FormEvent) => {
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1">Correo electrónico</label>
+                <label className="block text-xs font-medium text-slate-400 mb-1">Email address</label>
                 <input
                   type="email"
                   required
@@ -203,7 +203,7 @@ const handleCreateUser = async (e: React.FormEvent) => {
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1">Nombre Completo</label>
+                <label className="block text-xs font-medium text-slate-400 mb-1">Full Name</label>
                 <input
                   type="text"
                   value={fullName}
@@ -212,7 +212,7 @@ const handleCreateUser = async (e: React.FormEvent) => {
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1">Contraseña</label>
+                <label className="block text-xs font-medium text-slate-400 mb-1">Password</label>
                 <input
                   type="password"
                   required
@@ -222,7 +222,7 @@ const handleCreateUser = async (e: React.FormEvent) => {
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1">Rol Inicial</label>
+                <label className="block text-xs font-medium text-slate-400 mb-1">Initial Role</label>
                 <select
                   value={role}
                   onChange={(e) => setRole(e.target.value)}
@@ -240,7 +240,7 @@ const handleCreateUser = async (e: React.FormEvent) => {
                   onClick={() => setShowModal(false)}
                   className="px-4 py-2 text-sm text-slate-400 hover:text-slate-200"
                 >
-                  Cancelar
+                  Cancel
                 </button>
                 <button
                   type="submit"
@@ -248,7 +248,7 @@ const handleCreateUser = async (e: React.FormEvent) => {
                   className="bg-blue-600 hover:bg-blue-500 text-white text-sm px-4 py-2 rounded-lg flex items-center gap-2"
                 >
                   {creating && <Loader2 className="w-4 h-4 animate-spin" />}
-                  <span>Guardar</span>
+                  <span>Save</span>
                 </button>
               </div>
             </form>

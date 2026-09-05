@@ -23,7 +23,7 @@ export default function LoginPage() {
       router.push('/chat');
       router.refresh();
     } catch (err: any) {
-      setError(err.message || 'Credenciales inválidas. Verifica tu usuario y contraseña.');
+      setError(err.message || 'Invalid credentials. Check your username and password.');
     } finally {
       setLoading(false);
     }
@@ -59,7 +59,7 @@ export default function LoginPage() {
         <form onSubmit={handleSubmit} className="space-y-5">
           <div>
             <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
-              Usuario o Correo
+              Username or Email
             </label>
             <div className="relative">
               <User className="w-4 h-4 absolute left-3.5 top-3.5 text-slate-500" />
@@ -76,7 +76,7 @@ export default function LoginPage() {
 
           <div>
             <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
-              Contraseña
+              Password
             </label>
             <div className="relative">
               <Lock className="w-4 h-4 absolute left-3.5 top-3.5 text-slate-500" />
@@ -106,10 +106,10 @@ export default function LoginPage() {
             {loading ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Autenticando...</span>
+                <span>Authenticating...</span>
               </>
             ) : (
-              <span>Ingresar a la Plataforma</span>
+              <span>Sign in to the Platform</span>
             )}
           </button>
         </form>
@@ -118,7 +118,7 @@ export default function LoginPage() {
         <div className="mt-8 pt-6 border-t border-slate-800/60 flex items-center justify-between text-xs text-slate-500">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span>Sistemas operativos</span>
+            <span>Systems operational</span>
           </div>
           <span>v1.0.0 Enterprise</span>
         </div>

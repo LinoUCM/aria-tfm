@@ -175,7 +175,7 @@ export default function ChatPage() {
 
   // En un mensaje de voz aún no hay texto: mostramos un marcador que luego
   // se reemplaza con la transcripción real vía el evento SSE "transcription".
-  const text = audioBase64Override ? "🎤 Mensaje de voz" : input;
+  const text = audioBase64Override ? "🎤 Voice message" : input;
 
   const userMessage: Message = {
     id: Date.now().toString(),
@@ -360,7 +360,7 @@ export default function ChatPage() {
         const reader = new FileReader();
         reader.onload = () => {
           const base64 = (reader.result as string).split(",")[1];
-          setInput("🎤 Mensaje de voz");
+          setInput("🎤 Voice message");
           setAudioBase64(base64);
           // Disparamos el envío desde aquí con el base64 local (el estado
           // audioBase64 aún no está actualizado por ser asíncrono).
@@ -533,7 +533,7 @@ export default function ChatPage() {
           isRecording ? "text-red-400 font-medium animate-pulse" : "text-gray-600"
         )}>
           {isRecording
-            ? "🔴 Escuchando... pulsa el micrófono de nuevo para terminar"
+            ? "🔴 Listening... tap the mic again to stop"
             : "Enter to send · Shift+Enter for new line · Attach images for visual analysis"}
         </p>
       </div>

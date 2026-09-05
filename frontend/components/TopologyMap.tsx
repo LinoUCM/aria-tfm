@@ -21,9 +21,9 @@ export const TopologyMap: React.FC<TopologyMapProps> = ({
   const nodes: NodeConfig[] = [
     { id: 'web-frontend', label: 'Web Frontend', sublabel: 'React App', x: 40, y: 85 },
     { id: 'api-gateway', label: 'API Gateway', sublabel: 'FastAPI / Envoy', x: 240, y: 85 },
-    { id: 'payment-service', label: 'payment-service', sublabel: 'Microservicio', x: 460, y: 35 },
-    { id: 'notification-service', label: 'notification-service', sublabel: 'Microservicio', x: 460, y: 85 },
-    { id: 'checkout-service', label: 'checkout-service', sublabel: 'Microservicio', x: 460, y: 135 },
+    { id: 'payment-service', label: 'payment-service', sublabel: 'Microservice', x: 460, y: 35 },
+    { id: 'notification-service', label: 'notification-service', sublabel: 'Microservice', x: 460, y: 85 },
+    { id: 'checkout-service', label: 'checkout-service', sublabel: 'Microservice', x: 460, y: 135 },
     { id: 'aria_db', label: 'aria_db', sublabel: 'PostgreSQL DB', x: 680, y: 35 },
     { id: 'redis-cache', label: 'redis-cache', sublabel: 'Redis Cluster', x: 680, y: 135 },
   ];
@@ -61,7 +61,7 @@ export const TopologyMap: React.FC<TopologyMapProps> = ({
         <div className="flex items-center gap-2">
           <span className="w-2.5 h-2.5 rounded-full bg-cyan-500 animate-pulse" />
           <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-300">
-            Topología de Dependencias del Sistema
+            System Dependency Topology
           </h4>
         </div>
         <div className="flex items-center gap-4 text-[11px] text-slate-400">
@@ -69,10 +69,10 @@ export const TopologyMap: React.FC<TopologyMapProps> = ({
             <span className="w-2 h-2 rounded-full bg-slate-600" /> Normal
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-amber-500" /> Afectado
+            <span className="w-2 h-2 rounded-full bg-amber-500" /> Affected
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" /> Causa Raíz
+            <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" /> Root Cause
           </span>
         </div>
       </div>
@@ -126,12 +126,12 @@ export const TopologyMap: React.FC<TopologyMapProps> = ({
             strokeColor = '#ef4444'; // red-500
             fillColor = '#450a0a';   // red-950
             textColor = '#fca5a5';   // red-300
-            badge = 'CAUSA RAÍZ';
+            badge = 'ROOT CAUSE';
           } else if (state === 'affected') {
             strokeColor = '#f59e0b'; // amber-500
             fillColor = '#451a03';   // amber-950
             textColor = '#fde68a';   // amber-200
-            badge = 'AFECTADO';
+            badge = 'AFFECTED';
           }
 
           return (

@@ -74,7 +74,7 @@ function PostMortemButton({
       onPostmortemGenerated();
     } catch (err: any) {
       console.error(err);
-      alert(err.message || "Error al procesar el Post-Mortem");
+      alert(err.message || "Failed to process the Post-Mortem");
     } finally {
       setLoading(false);
     }
@@ -90,7 +90,7 @@ function PostMortemButton({
           ? "bg-emerald-900/40 hover:bg-emerald-800/60 text-emerald-300 border-emerald-700/50"
           : "bg-indigo-900/40 hover:bg-indigo-800/60 text-indigo-300 border-indigo-700/50"
       )}
-      title={hasPostmortem ? "Descargar PDF Post-Mortem" : "Generar y descargar informe Post-Mortem"}
+      title={hasPostmortem ? "Download Post-Mortem PDF" : "Generate and download Post-Mortem report"}
     >
       {loading ? (
         <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-400" />
@@ -101,10 +101,10 @@ function PostMortemButton({
       )}
       <span>
         {loading
-          ? "Generando..."
+          ? "Generating..."
           : hasPostmortem
-          ? "Ver Post-Mortem"
-          : "Generar Post-Mortem"}
+          ? "View Post-Mortem"
+          : "Generate Post-Mortem"}
       </span>
     </button>
   );
@@ -287,17 +287,17 @@ export default function IncidentsPage() {
       <div className="flex items-center gap-4 bg-gray-900 p-4 rounded-xl border border-gray-800">
         <div className="flex items-center gap-2 text-gray-400 text-xs font-semibold uppercase tracking-wider">
           <Filter className="w-4 h-4 text-blue-400" />
-          Filtros:
+          Filters:
         </div>
 
         <div className="flex items-center gap-2">
-          <label className="text-xs text-gray-400">Severidad:</label>
+          <label className="text-xs text-gray-400">Severity:</label>
           <select
             value={filterSeverity}
             onChange={(e) => setFilterSeverity(e.target.value)}
             className="bg-gray-800 text-xs text-white rounded-lg px-3 py-1.5 border border-gray-700 outline-none cursor-pointer"
           >
-            <option value="ALL">Todas</option>
+            <option value="ALL">All</option>
             <option value="P1">P1 — Critical</option>
             <option value="P2">P2 — High</option>
             <option value="P3">P3 — Medium</option>
@@ -306,15 +306,15 @@ export default function IncidentsPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          <label className="text-xs text-gray-400">Estado:</label>
+          <label className="text-xs text-gray-400">Status:</label>
           <select
             value={filterStatus}
             onChange={(e) => setFilterStatus(e.target.value)}
             className="bg-gray-800 text-xs text-white rounded-lg px-3 py-1.5 border border-gray-700 outline-none cursor-pointer"
           >
-            <option value="ALL">Todos</option>
-            <option value="OPEN">Abiertos / En investigación</option>
-            <option value="RESOLVED">Resueltos</option>
+            <option value="ALL">All</option>
+            <option value="OPEN">Open / Investigating</option>
+            <option value="RESOLVED">Resolved</option>
           </select>
         </div>
       </div>
@@ -375,7 +375,7 @@ export default function IncidentsPage() {
                         className="flex items-center gap-1.5 bg-emerald-700/80 hover:bg-emerald-600 text-white text-xs px-3 py-1.5 rounded-lg font-medium transition border border-emerald-600"
                       >
                         <Check className="w-3.5 h-3.5" />
-                        Marcar Resuelto
+                        Mark Resolved
                       </button>
                     )}
 
@@ -465,7 +465,7 @@ export default function IncidentsPage() {
                       ) : (
                         <div className="flex items-center gap-2 text-sm text-gray-500 py-2 italic">
                           <AlertCircle className="w-4 h-4 text-gray-600" />
-                          No hay informe persistido para este incidente pasado. Los nuevos alertas mostrarán su análisis guardado.
+                          No stored report for this past incident. New alerts will show their saved analysis.
                         </div>
                       )}
                     </div>

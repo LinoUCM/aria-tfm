@@ -132,7 +132,7 @@ export default function Navigation() {
           className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-all group"
         >
           <LogOut className="w-4 h-4 text-gray-500 group-hover:text-red-400" />
-          <span>Cerrar sesión</span>
+          <span>Log out</span>
         </button>
       </div>
     </aside>
