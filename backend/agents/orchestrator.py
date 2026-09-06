@@ -402,7 +402,11 @@ Be concise. Max 150 words."""
             state["similar_incidents"] = similar
             if not results or (results and results[0]["relevance_score"] < 70):
                 state["needs_web_search"] = True
-            if results and state.get("channel_id"):
+            # Solo emitimos "Sources consulted" si la KB tenía cobertura suficiente
+            # (needs_web_search False). Si hubo que caer a búsqueda web, la respuesta
+            # ya dice que no encontró contexto útil: mostrar esos documentos de baja
+            # relevancia contradiría al propio texto.
+            if results and not state["needs_web_search"] and state.get("channel_id"):
                 # Fuentes citadas agrupadas por documento de origen: si el mismo
                 # archivo aparece en varios chunks, se muestra una sola vez con la
                 # relevancia más alta. `results` ya viene ordenado desc (sorted en
