@@ -171,7 +171,7 @@ export default function ChatPage() {
         await openDocumentInNewTab(src.doc_id);
       }
     } catch (err: any) {
-      toast.error(err.message || "No se pudo abrir el documento");
+      toast.error(err.message || "Failed to open the document");
     } finally {
       setOpeningDoc(false);
     }
@@ -562,24 +562,27 @@ export default function ChatPage() {
               <MessageBubble key={message.id} message={message} onCiteClick={setActiveCitation} />
             ))}
 
-            {/* Fuentes de mensajes anteriores a la trazabilidad por mensaje
-                (filas rag_references con message_index null). No cuelgan de
-                ninguna burbuja: bloque único al final de la conversación. */}
+            {/* Sources for RAG references persisted before per-message
+                traceability (rag_references rows with message_index null). Not
+                attached to any bubble: a single block at the end of the thread. */}
             {legacyCitations.length > 0 && (
               <div className="ml-11 max-w-[75%] bg-gray-900/50 border border-gray-800 rounded-lg p-3 space-y-1.5">
                 <div className="flex items-center gap-1.5 text-xs text-gray-400 font-medium">
-                  <BookOpen className="w-3 h-3" /> Fuentes de mensajes anteriores a esta actualización
+                  <BookOpen className="w-3 h-3" /> Sources from messages before this update
                 </div>
                 {legacyCitations.map((source, i) => (
                   <button
                     key={i}
                     onClick={() => setActiveCitation(source)}
-                    className="w-full flex items-center justify-between text-xs group"
+                    className="w-full flex items-center justify-between gap-2 text-xs"
                   >
-                    <span className="text-gray-300 group-hover:text-blue-400 truncate max-w-[220px] text-left" title={source.filename}>
-                      {source.filename}
+                    <span className="min-w-0 flex-1 inline-flex items-center gap-1 text-blue-400 hover:text-blue-300">
+                      <span className="truncate underline underline-offset-2 text-left" title={source.filename}>
+                        {source.filename}
+                      </span>
+                      <ExternalLink className="w-3 h-3 flex-shrink-0" />
                     </span>
-                    <span className="ml-2 px-1.5 py-0.5 rounded text-xs font-mono bg-gray-800 text-gray-400">
+                    <span className="px-1.5 py-0.5 rounded text-xs font-mono bg-gray-800 text-gray-400 flex-shrink-0">
                       {source.relevance_score}%
                     </span>
                   </button>
@@ -724,8 +727,8 @@ function CitationCard({
           </div>
         ) : (
           <p className="text-xs text-gray-500 italic">
-            El fragmento exacto no está disponible para este mensaje en vivo; recarga la
-            conversación para verlo. Puedes abrir el documento completo igualmente.
+            The exact excerpt isn&apos;t available for this live message; reload the
+            conversation to see it. You can still open the full document.
           </p>
         )}
 
@@ -735,7 +738,7 @@ function CitationCard({
           className="w-full flex items-center justify-center gap-2 text-xs bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg py-2 transition-colors"
         >
           {opening ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ExternalLink className="w-3.5 h-3.5" />}
-          Abrir documento completo
+          Open full document
         </button>
       </div>
     </div>
@@ -787,25 +790,32 @@ function MessageBubble({ message, onCiteClick }: { message: Message; onCiteClick
               <BookOpen className="w-3 h-3" /> Sources consulted
             </div>
             {message.rag_sources.map((source, i) => (
-              <div key={i} className="flex items-center justify-between text-xs">
-                <span className="truncate max-w-[200px]" title={source.filename}>
-                  {source.doc_id ? (
-                    <button
-                      onClick={() => onCiteClick(source)}
-                      className="text-gray-300 hover:text-blue-400 underline decoration-dotted underline-offset-2 text-left"
-                    >
-                      {source.filename}
-                    </button>
-                  ) : source.source_url ? (
-                    <a href={source.source_url} target="_blank" rel="noopener noreferrer" className="text-gray-300 hover:text-blue-400">
-                      {source.filename}
-                    </a>
-                  ) : (
-                    <span className="text-gray-300">{source.filename}</span>
-                  )}
-                </span>
+              <div key={i} className="flex items-center justify-between gap-2 text-xs">
+                {source.doc_id ? (
+                  <button
+                    onClick={() => onCiteClick(source)}
+                    title={source.filename}
+                    className="min-w-0 flex-1 inline-flex items-center gap-1 text-blue-400 hover:text-blue-300"
+                  >
+                    <span className="truncate underline underline-offset-2 text-left">{source.filename}</span>
+                    <ExternalLink className="w-3 h-3 flex-shrink-0" />
+                  </button>
+                ) : source.source_url ? (
+                  <a
+                    href={source.source_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title={source.filename}
+                    className="min-w-0 flex-1 inline-flex items-center gap-1 text-blue-400 hover:text-blue-300"
+                  >
+                    <span className="truncate underline underline-offset-2">{source.filename}</span>
+                    <ExternalLink className="w-3 h-3 flex-shrink-0" />
+                  </a>
+                ) : (
+                  <span className="truncate flex-1 min-w-0 text-gray-300" title={source.filename}>{source.filename}</span>
+                )}
                 <span className={clsx(
-                  "ml-2 px-1.5 py-0.5 rounded text-xs font-mono",
+                  "px-1.5 py-0.5 rounded text-xs font-mono flex-shrink-0",
                   source.relevance_score >= 90 ? "bg-green-900/50 text-green-400" :
                   source.relevance_score >= 75 ? "bg-yellow-900/50 text-yellow-400" :
                   "bg-gray-800 text-gray-400"
@@ -829,10 +839,11 @@ function MessageBubble({ message, onCiteClick }: { message: Message; onCiteClick
                   href={source.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-gray-300 hover:text-blue-400 truncate"
+                  className="min-w-0 inline-flex items-center gap-1 text-blue-400 hover:text-blue-300"
                   title={source.url}
                 >
-                  {source.title}
+                  <span className="truncate underline underline-offset-2">{source.title}</span>
+                  <ExternalLink className="w-3 h-3 flex-shrink-0" />
                 </a>
               </div>
             ))}
@@ -860,6 +871,44 @@ function MessageBubble({ message, onCiteClick }: { message: Message; onCiteClick
   );
 }
 
+// Convierte URLs sueltas (http/https) de un texto plano en enlaces clicables.
+// El bloque estructurado "Web sources" solo existe en la sesión en vivo (SSE, no
+// se persiste), así que al recargar una conversación las fuentes web solo quedan
+// como el patrón "Título (https://…)" que el LLM escribió en la respuesta; esto
+// las hace clicables sin tocar backend ni persistencia. El corte en `)` y espacio
+// preserva el paréntesis de cierre de ese patrón como texto.
+const URL_RE = /(https?:\/\/[^\s)]+)/g;
+
+function linkifyText(text: string, keyPrefix: string) {
+  return text.split(URL_RE).map((seg, k) =>
+    /^https?:\/\//.test(seg) ? (
+      <a
+        key={`${keyPrefix}-u${k}`}
+        href={seg}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-blue-400 hover:text-blue-300 underline underline-offset-2 break-all"
+      >
+        {seg}
+      </a>
+    ) : (
+      <span key={`${keyPrefix}-t${k}`}>{seg}</span>
+    )
+  );
+}
+
+// Igual que el parseo de **negrita** existente, pero además linkifica URLs dentro
+// de los tramos que no son negrita.
+function renderInline(line: string, keyPrefix: string) {
+  return line.split(/\*\*(.*?)\*\*/g).map((part, j) =>
+    j % 2 === 1 ? (
+      <strong key={`${keyPrefix}-b${j}`}>{part}</strong>
+    ) : (
+      <span key={`${keyPrefix}-s${j}`}>{linkifyText(part, `${keyPrefix}-s${j}`)}</span>
+    )
+  );
+}
+
 function MarkdownContent({ content }: { content: string }) {
   // Simple markdown renderer
   const lines = content.split("\n");
@@ -869,16 +918,11 @@ function MarkdownContent({ content }: { content: string }) {
         if (line.startsWith("## ")) return <h2 key={i} className="font-bold text-base mt-2">{line.slice(3)}</h2>;
         if (line.startsWith("# ")) return <h1 key={i} className="font-bold text-lg mt-2">{line.slice(2)}</h1>;
         if (line.startsWith("**") && line.endsWith("**")) return <p key={i} className="font-semibold">{line.slice(2, -2)}</p>;
-        if (line.startsWith("- ") || line.startsWith("* ")) return <p key={i} className="pl-3 before:content-['•'] before:mr-2 before:text-blue-400">{line.slice(2)}</p>;
-        if (/^\d+\./.test(line)) return <p key={i} className="pl-3">{line}</p>;
+        if (line.startsWith("- ") || line.startsWith("* ")) return <p key={i} className="pl-3 before:content-['•'] before:mr-2 before:text-blue-400">{renderInline(line.slice(2), `l${i}`)}</p>;
+        if (/^\d+\./.test(line)) return <p key={i} className="pl-3">{renderInline(line, `l${i}`)}</p>;
         if (line === "") return <br key={i} />;
-        // Inline bold
-        const parts = line.split(/\*\*(.*?)\*\*/g);
-        return (
-          <p key={i}>
-            {parts.map((part, j) => j % 2 === 1 ? <strong key={j}>{part}</strong> : part)}
-          </p>
-        );
+        // Inline bold + URLs
+        return <p key={i}>{renderInline(line, `l${i}`)}</p>;
       })}
     </div>
   );

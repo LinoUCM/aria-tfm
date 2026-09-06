@@ -166,7 +166,7 @@ export async function listConversationCitations(
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || `Error ${res.status}: No se pudieron cargar las citas`);
+    throw new Error(err.detail || `Error ${res.status}: Failed to load citations`);
   }
   return res.json();
 }
@@ -182,7 +182,7 @@ export async function openDocumentInNewTab(docId: string): Promise<void> {
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || `Error ${res.status}: No se pudo abrir el documento`);
+    throw new Error(err.detail || `Error ${res.status}: Failed to open the document`);
   }
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
