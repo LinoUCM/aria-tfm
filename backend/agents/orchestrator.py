@@ -482,11 +482,20 @@ Be concise. Max 150 words."""
                 # umbral que el propio sistema usa para considerar la KB suficiente.
                 relevant_results = [r for r in state["rag_results"] if r["relevance_score"] >= 70]
                 if relevant_results:
+                    included_chunks = relevant_results[:3]
                     kb_context = "\n\n".join([
                         f"**[{r['filename']} — {r['relevance_score']}% relevance]**\n{r['content']}"
-                        for r in relevant_results[:3]
+                        for r in included_chunks
                     ])
                     context_parts.append(f"## Knowledge Base\n{kb_context}")
+                    # Trazabilidad estructurada: una fila rag_references por cada
+                    # chunk que REALMENTE entra en el prompt (included_chunks), no
+                    # por cada resultado que devolvió la búsqueda semántica. Es una
+                    # capa adicional, no sustituye la extracción de citas por regex
+                    # sobre la respuesta. Best-effort: sesión y try/except propios.
+                    await self._persist_rag_references(
+                        state.get("conversation_id"), included_chunks
+                    )
             if state.get("similar_incidents"):
                 incidents_text = "\n".join([
                     f"- {inc['title']} ({inc['created_at']}) → {inc.get('resolution', 'Unresolved')}"
@@ -524,6 +533,78 @@ Never guess critical values."""
         if state.get("channel_id"):
             await sse_manager.agent_end(state["channel_id"], "synthesis")
         return state
+
+    async def _persist_rag_references(self, conversation_id: Optional[str], chunks: List[dict]) -> None:
+        """Deja en la tabla rag_references una fila por cada chunk documental que
+        de verdad entró en el prompt de síntesis.
+
+        Capa de trazabilidad estructurada: NO reemplaza la extracción de citas por
+        regex sobre la respuesta del LLM ni cambia el texto que ve el usuario. Es
+        best-effort — cualquier fallo se registra y se traga para que nunca rompa
+        ni ralentice de forma visible la respuesta (mismo criterio que la creación
+        de Document en webhooks.py).
+
+        Se saltan (sin abortar el resto) los chunks cuyo doc_id no sea un UUID
+        válido o que no tengan todavía fila en documents: ambas columnas son FK
+        obligatorias a nivel de constraint (conversation_id -> conversations.id,
+        document_id -> documents.id).
+        """
+        if not conversation_id or not chunks:
+            return
+        try:
+            from sqlalchemy import select as _select
+            from core.database import AsyncSessionLocal
+            from models.database import Conversation, Document, RagReference
+
+            try:
+                conv_uuid = UUID(str(conversation_id))
+            except (ValueError, TypeError):
+                logger.warning("rag_ref_skip_bad_conversation_id", value=str(conversation_id))
+                return
+
+            async with AsyncSessionLocal() as db:
+                conv_exists = await db.execute(
+                    _select(Conversation.id).where(Conversation.id == conv_uuid)
+                )
+                if conv_exists.scalar_one_or_none() is None:
+                    logger.warning("rag_ref_skip_no_conversation", conversation_id=str(conv_uuid))
+                    return
+
+                inserted = 0
+                for r in chunks:
+                    raw_doc_id = (r.get("doc_id") or "").strip()
+                    try:
+                        doc_uuid = UUID(raw_doc_id)
+                    except (ValueError, TypeError):
+                        logger.warning("rag_ref_skip_bad_doc_id",
+                                       doc_id=raw_doc_id, filename=r.get("filename"))
+                        continue
+
+                    doc_exists = await db.execute(
+                        _select(Document.id).where(Document.id == doc_uuid)
+                    )
+                    if doc_exists.scalar_one_or_none() is None:
+                        logger.warning("rag_ref_skip_orphan_doc",
+                                       doc_id=raw_doc_id, filename=r.get("filename"))
+                        continue
+
+                    page = r.get("page")
+                    db.add(RagReference(
+                        conversation_id=conv_uuid,
+                        document_id=doc_uuid,
+                        chunk_content=r.get("content"),
+                        relevance_score=r.get("relevance_score"),
+                        chunk_index=r.get("chunk_index"),
+                        page_number=page if page else None,
+                    ))
+                    inserted += 1
+
+                if inserted:
+                    await db.commit()
+                    logger.info("rag_references_persisted",
+                                conversation_id=str(conv_uuid), count=inserted)
+        except Exception as e:
+            logger.error("rag_references_persist_failed", error=str(e))
 
     # ─── Public Interface ──────────────────────────────────────────────────────
 
@@ -606,10 +687,53 @@ literal value null. Do not force a match.
 }}
 ```"""
 
+        # El pipeline de RAG deja trazabilidad en rag_references, cuya FK
+        # conversation_id apunta a conversations.id. El análisis de un incidente no
+        # nace de una conversación de chat, así que reutilizamos (o creamos una
+        # sola vez) una Conversation "sintética" ligada a este incident_id:
+        #  - get-or-create por incident_id => un re-análisis del mismo incidente no
+        #    inserta una fila nueva, reutiliza la existente.
+        #  - owner_username=None => queda fuera del historial de chat del usuario
+        #    (GET /chat/conversations filtra por owner_username) y no colisiona con
+        #    un eventual chat de usuario ligado al mismo incidente.
+        # Si algo falla aquí, seguimos con el incident_id: la escritura de
+        # rag_references es best-effort y simplemente se omitirá.
+        conversation_id = incident_id
+        try:
+            from sqlalchemy import select as _select
+            from core.database import AsyncSessionLocal
+            from models.database import Conversation
+
+            inc_uuid = UUID(incident_id)
+            async with AsyncSessionLocal() as db:
+                existing = await db.execute(
+                    _select(Conversation).where(
+                        Conversation.incident_id == inc_uuid,
+                        Conversation.owner_username.is_(None),
+                    )
+                )
+                conv = existing.scalars().first()
+                if conv is None:
+                    conv = Conversation(
+                        incident_id=inc_uuid,
+                        owner_username=None,
+                        title=f"[Análisis ARIA] {title or incident_id}"[:500],
+                        messages=[],
+                        agents_used=[],
+                        input_modalities=[],
+                    )
+                    db.add(conv)
+                    await db.commit()
+                    await db.refresh(conv)
+                conversation_id = str(conv.id)
+        except Exception as e:
+            logger.error("incident_conversation_get_or_create_failed",
+                         incident_id=incident_id, error=str(e))
+
         # Ejecutamos el flujo multinodo completo de ARIA (RAG + memoria de incidentes)
         full_response = await self.run(
             channel_id=channel_id,
-            conversation_id=incident_id,
+            conversation_id=conversation_id,
             message=message
         )
 
