@@ -475,11 +475,18 @@ Be concise. Max 150 words."""
             if state.get("vision_analysis"):
                 context_parts.append(f"## Image Analysis\n{state['vision_analysis']}")
             if state.get("rag_results"):
-                kb_context = "\n\n".join([
-                    f"**[{r['filename']} — {r['relevance_score']}% relevance]**\n{r['content']}"
-                    for r in state["rag_results"][:3]
-                ])
-                context_parts.append(f"## Knowledge Base\n{kb_context}")
+                # Mismo umbral (70) que _rag_node ya usa para decidir needs_web_search:
+                # antes, cualquier chunk recuperado entraba al contexto del LLM aunque
+                # tuviera relevancia baja, contaminando las citas generadas (limitación
+                # 5.1 de la evaluación). Ahora solo pasa a síntesis lo que ya supera el
+                # umbral que el propio sistema usa para considerar la KB suficiente.
+                relevant_results = [r for r in state["rag_results"] if r["relevance_score"] >= 70]
+                if relevant_results:
+                    kb_context = "\n\n".join([
+                        f"**[{r['filename']} — {r['relevance_score']}% relevance]**\n{r['content']}"
+                        for r in relevant_results[:3]
+                    ])
+                    context_parts.append(f"## Knowledge Base\n{kb_context}")
             if state.get("similar_incidents"):
                 incidents_text = "\n".join([
                     f"- {inc['title']} ({inc['created_at']}) → {inc.get('resolution', 'Unresolved')}"
