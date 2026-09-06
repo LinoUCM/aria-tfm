@@ -18,6 +18,7 @@ interface Message {
   id: string;
   role: "user" | "assistant";
   content: string;
+  image?: string; // data URL de la imagen adjunta — solo en la sesión actual, no se persiste
   agents_used?: string[];
   rag_sources?: RagSource[];
   similar_incidents?: SimilarIncident[];
@@ -181,6 +182,8 @@ export default function ChatPage() {
     id: Date.now().toString(),
     role: "user",
     content: text,
+    // Capturamos el preview ANTES de que se limpie el estado tras enviar.
+    image: imagePreview,
     timestamp: new Date(),
   };
 
@@ -558,15 +561,25 @@ function MessageBubble({ message }: { message: Message }) {
           "rounded-xl px-4 py-3 text-sm leading-relaxed",
           isUser ? "bg-blue-600 text-white" : "bg-gray-900 text-gray-100 border border-gray-800"
         )}>
+          {message.image && (
+            <img
+              src={message.image}
+              alt="Attached"
+              className={clsx(
+                "rounded-lg max-h-48 w-auto border border-gray-700",
+                message.content && "mb-2"
+              )}
+            />
+          )}
           {message.content ? (
             <MarkdownContent content={message.content} />
-          ) : (
+          ) : !isUser ? (
             <div className="flex gap-1">
               <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
               <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
               <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
             </div>
-          )}
+          ) : null}
         </div>
 
         {/* RAG Sources */}
@@ -577,7 +590,7 @@ function MessageBubble({ message }: { message: Message }) {
             </div>
             {message.rag_sources.map((source, i) => (
               <div key={i} className="flex items-center justify-between text-xs">
-                <span className="text-gray-300 truncate max-w-[200px]">
+                <span className="text-gray-300 truncate max-w-[200px]" title={source.filename}>
                   {source.source_url ? (
                     <a href={source.source_url} target="_blank" rel="noopener noreferrer" className="hover:text-blue-400">
                       {source.filename}
