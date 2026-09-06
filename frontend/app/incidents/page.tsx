@@ -177,12 +177,23 @@ export default function IncidentsPage() {
       let receivedTokens = false;
       const es = streamIncidentAnalysis(incident.id);
 
+      // El análisis se dispara una sola vez, al crearse el incidente, y llega por
+      // el canal SSE general. Si el incidente es reciente (<2 min) casi seguro
+      // sigue en curso — el pipeline completo (routing + RAG + posible búsqueda
+      // web + LLM con fallback Gemini→Ollama→Groq) puede tardar bastante más de
+      // unos segundos —, así que esperamos hasta 90s antes de rendirnos. Si ya
+      // tiene 2 min o más y sigue sin análisis, no hay ninguna tarea de fondo
+      // corriendo: bastan 3s para dar tiempo a que el EventSource conecte antes
+      // de mostrar "no report".
+      const ageMs = Date.now() - new Date(incident.created_at).getTime();
+      const giveUpAfterMs = ageMs < 120_000 ? 90_000 : 3_000;
+
       const timeout = setTimeout(() => {
         if (!receivedTokens) {
           es.close();
           setStreamStatus((prev) => ({ ...prev, [incident.id]: "done" }));
         }
-      }, 6000);
+      }, giveUpAfterMs);
 
       es.onmessage = (e) => {
         try {
