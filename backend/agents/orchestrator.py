@@ -403,11 +403,24 @@ Be concise. Max 150 words."""
             if not results or (results and results[0]["relevance_score"] < 70):
                 state["needs_web_search"] = True
             if results and state.get("channel_id"):
-                await sse_manager.rag_sources(state["channel_id"], [
-                    {"filename": r["filename"], "relevance_score": r["relevance_score"],
-                     "category": r["category"], "page": r.get("page"), "source_url": r.get("source_url")}
-                    for r in results
-                ])
+                # Fuentes citadas agrupadas por documento de origen: si el mismo
+                # archivo aparece en varios chunks, se muestra una sola vez con la
+                # relevancia más alta. `results` ya viene ordenado desc (sorted en
+                # indexing_service.py), así que basta con quedarse con la primera
+                # aparición de cada `filename`. Solo afecta a lo que ve el usuario:
+                # el contexto que recibe el LLM (state["rag_results"]) sigue con
+                # todos los chunks.
+                seen_files = set()
+                unique_sources = []
+                for r in results:
+                    if r["filename"] in seen_files:
+                        continue
+                    seen_files.add(r["filename"])
+                    unique_sources.append({
+                        "filename": r["filename"], "relevance_score": r["relevance_score"],
+                        "category": r["category"], "page": r.get("page"), "source_url": r.get("source_url"),
+                    })
+                await sse_manager.rag_sources(state["channel_id"], unique_sources)
             if similar and state.get("channel_id"):
                 await sse_manager.similar_incidents(state["channel_id"], similar)
         except Exception as e:
