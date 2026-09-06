@@ -268,10 +268,12 @@ async def execute_incident_remediation(
 
         from services.indexing_service import get_indexing_service
         indexer = get_indexing_service()
-        doc_id = f"kb_inc_{str(incident.id)}"
+        # Mismo id para la fila Document (Postgres) y para los vectores (Chroma),
+        # así DELETE /admin/documents/{id} puede borrar ambos (patrón de documents.py).
+        auto_doc_id = uuid.uuid4()
 
         chunks_count = await indexer.index_text(
-            doc_id=doc_id,
+            doc_id=str(auto_doc_id),
             text=runbook_md,
             filename=filename,
             category="runbooks",
@@ -289,7 +291,7 @@ async def execute_incident_remediation(
             f.write(runbook_md)
 
         auto_doc = Document(
-            id=uuid.uuid4(),
+            id=auto_doc_id,
             filename=filename,
             title=f"Auto Runbook: {incident.title}",
             category="runbook",
@@ -541,10 +543,12 @@ async def resolve_incident_with_feedback(
     try:
         from services.indexing_service import get_indexing_service
         indexer = get_indexing_service()
-        doc_id = f"kb_inc_{str(incident.id)}"
+        # Mismo id para la fila Document (Postgres) y para los vectores (Chroma),
+        # así DELETE /admin/documents/{id} puede borrar ambos (patrón de documents.py).
+        auto_doc_id = uuid.uuid4()
 
         chunks_count = await indexer.index_text(
-            doc_id=doc_id,
+            doc_id=str(auto_doc_id),
             text=runbook_md,
             filename=filename,
             category="runbooks",
@@ -561,7 +565,7 @@ async def resolve_incident_with_feedback(
             f.write(runbook_md)
 
         auto_doc = Document(
-            id=uuid.uuid4(),
+            id=auto_doc_id,
             filename=filename,
             title=f"Auto Runbook: {incident.title}",
             category="runbook",
