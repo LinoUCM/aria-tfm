@@ -1,3 +1,4 @@
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
 from core.config import settings
@@ -34,6 +35,21 @@ async def get_db():
             await session.close()
 
 
+# Migraciones ligeras que create_all no puede aplicar. Este proyecto no usa
+# Alembic: el esquema se materializa con Base.metadata.create_all(), que crea
+# tablas nuevas pero NUNCA altera una tabla ya existente. Cada vez que se añade
+# una columna a un modelo ya desplegado hay que reflejarla aquí con una
+# sentencia idempotente (ADD COLUMN IF NOT EXISTS), que se ejecuta en cada
+# arranque justo después de create_all y es un no-op cuando la columna ya está.
+_LIGHTWEIGHT_MIGRATIONS = [
+    # message_index: añadida para agrupar las citas RAG por mensaje del asistente
+    # al recargar una conversación (ver RagReference.message_index).
+    "ALTER TABLE rag_references ADD COLUMN IF NOT EXISTS message_index INTEGER",
+]
+
+
 async def create_tables():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        for statement in _LIGHTWEIGHT_MIGRATIONS:
+            await conn.execute(text(statement))

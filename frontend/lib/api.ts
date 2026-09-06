@@ -141,6 +141,55 @@ export async function listConversations(): Promise<ConversationSummary[]> {
   return res.json();
 }
 
+// Citas RAG estructuradas de una conversación (tabla rag_references). Se usa al
+// recargar el historial, porque conversation.messages no guarda las fuentes de
+// cada mensaje: el cliente agrupa estas filas por message_index para reconstruir
+// el bloque de fuentes de cada burbuja del asistente. Las filas con
+// message_index null (previas a esta función) van igual y se muestran aparte.
+export interface ConversationCitation {
+  document_id: string;
+  filename: string;
+  title: string | null;
+  file_type: string | null;
+  relevance_score: number | null;
+  chunk_index: number | null;
+  chunk_content: string | null;
+  message_index: number | null;
+  created_at: string | null;
+}
+
+export async function listConversationCitations(
+  conversationId: string
+): Promise<ConversationCitation[]> {
+  const res = await fetch(`${API_URL}/chat/conversations/${conversationId}/citations`, {
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Error ${res.status}: No se pudieron cargar las citas`);
+  }
+  return res.json();
+}
+
+// Abre un documento de la KB en una pestaña nueva mediante un fetch autenticado
+// (Bearer token) + blob URL. window.open directo sobre el endpoint no adjunta la
+// cabecera Authorization y devuelve 401 — de ahí este rodeo. Sirve igual para
+// PDF (FileResponse) que para md/txt (el endpoint devuelve JSON en ese caso, así
+// que para esos tipos el llamador debería preferir fetchDocumentContent + modal).
+export async function openDocumentInNewTab(docId: string): Promise<void> {
+  const res = await fetch(`${API_URL}/admin/documents/${docId}/content`, {
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Error ${res.status}: No se pudo abrir el documento`);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  window.open(url, "_blank", "noopener,noreferrer");
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
 // ─── Documents ────────────────────────────────────────────────────────────────
 
 export async function uploadDocument(

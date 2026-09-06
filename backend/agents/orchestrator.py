@@ -423,6 +423,7 @@ Be concise. Max 150 words."""
                     unique_sources.append({
                         "filename": r["filename"], "relevance_score": r["relevance_score"],
                         "category": r["category"], "page": r.get("page"), "source_url": r.get("source_url"),
+                        "doc_id": r.get("doc_id"),
                     })
                 await sse_manager.rag_sources(state["channel_id"], unique_sources)
             if similar and state.get("channel_id"):
@@ -563,12 +564,18 @@ Never guess critical values."""
                 return
 
             async with AsyncSessionLocal() as db:
-                conv_exists = await db.execute(
-                    _select(Conversation.id).where(Conversation.id == conv_uuid)
-                )
-                if conv_exists.scalar_one_or_none() is None:
+                conv_row = (await db.execute(
+                    _select(Conversation.id, Conversation.messages).where(Conversation.id == conv_uuid)
+                )).first()
+                if conv_row is None:
                     logger.warning("rag_ref_skip_no_conversation", conversation_id=str(conv_uuid))
                     return
+
+                # Índice que ocupará el mensaje del asistente que se está generando
+                # ahora: _process_chat aún no lo ha añadido a Conversation.messages
+                # (lo hace tras retornar run()), y antes insertará el mensaje de
+                # usuario, así que el asistente caerá en len(messages)+1.
+                message_index = len(conv_row[1] or []) + 1
 
                 inserted = 0
                 for r in chunks:
@@ -596,6 +603,7 @@ Never guess critical values."""
                         relevance_score=r.get("relevance_score"),
                         chunk_index=r.get("chunk_index"),
                         page_number=page if page else None,
+                        message_index=message_index,
                     ))
                     inserted += 1
 

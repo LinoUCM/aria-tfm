@@ -177,6 +177,12 @@ class RagReference(Base):
     relevance_score = Column(Float)
     chunk_index = Column(Integer)
     page_number = Column(Integer)
+    # Índice que ocupará el mensaje del asistente que generó esta cita dentro
+    # del array Conversation.messages (== len(messages)+1 en el momento de
+    # sintetizar, ver _persist_rag_references). El frontend agrupa las citas de
+    # cada burbuja por este valor al recargar el historial. Nullable: las filas
+    # persistidas antes de introducir la columna quedan en NULL sin backfill.
+    message_index = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # Relations

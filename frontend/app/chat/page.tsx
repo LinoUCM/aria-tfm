@@ -4,15 +4,17 @@ import { useState, useRef, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   sendMessage, streamChat, fetchConversation, listConversations,
+  listConversationCitations, fetchDocumentContent, openDocumentInNewTab,
   ConversationSummary, ConversationDetail,
 } from "@/lib/api";
 import { formatDistanceToNow } from "date-fns";
 import toast from "react-hot-toast";
 import {
   Send, Mic, Square, Paperclip, Bot, User,
-  Loader2, AlertCircle, BookOpen, History, MessageSquare, Globe
+  Loader2, AlertCircle, BookOpen, History, MessageSquare, Globe, FileText, ExternalLink, X
 } from "lucide-react";
 import { clsx } from "clsx";
+import DocumentViewerModal from "@/components/DocumentViewerModal";
 
 interface Message {
   id: string;
@@ -34,9 +36,13 @@ interface WebSource {
 interface RagSource {
   filename: string;
   relevance_score: number;
-  category: string;
+  category?: string;
   page?: number;
   source_url?: string;
+  doc_id?: string;        // en vivo: del evento SSE (backend _rag_node). Histórico: document_id de /citations
+  file_type?: string;     // solo histórico (/citations)
+  chunk_content?: string; // solo histórico (/citations) — el pasaje exacto que usó el LLM
+  chunk_index?: number;   // solo histórico (/citations)
 }
 
 interface SimilarIncident {
@@ -101,6 +107,76 @@ export default function ChatPage() {
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
 
+  // Citas RAG persistidas sin message_index (filas previas a esa columna): se
+  // muestran en un bloque único al final, no colgando de ninguna burbuja.
+  const [legacyCitations, setLegacyCitations] = useState<RagSource[]>([]);
+  // Fuente sobre la que se ha hecho clic → ficha de cita (filename, relevancia,
+  // chunk_content). Desde ahí se abre el documento completo.
+  const [activeCitation, setActiveCitation] = useState<RagSource | null>(null);
+  // Documento .md/.txt renderizado en el visor reutilizado de la pantalla admin.
+  const [viewerDoc, setViewerDoc] = useState<{ title: string; content: string } | null>(null);
+  const [openingDoc, setOpeningDoc] = useState(false);
+
+  // Descarga las filas rag_references de la conversación y las reparte por
+  // message_index: cada burbuja de asistente (posición i del array de mensajes,
+  // que tras mapConversationMessages coincide con el índice de backend) recibe
+  // sus fuentes; las de message_index null se acumulan en legacyCitations.
+  const attachCitations = async (id: string, msgs: Message[]): Promise<Message[]> => {
+    try {
+      const cites = await listConversationCitations(id);
+      const byIdx = new Map<number, RagSource[]>();
+      const legacy: RagSource[] = [];
+      for (const c of cites) {
+        const src: RagSource = {
+          filename: c.filename,
+          relevance_score: c.relevance_score ?? 0,
+          doc_id: c.document_id,
+          file_type: c.file_type ?? undefined,
+          chunk_content: c.chunk_content ?? undefined,
+          chunk_index: c.chunk_index ?? undefined,
+        };
+        if (c.message_index == null) { legacy.push(src); continue; }
+        const arr = byIdx.get(c.message_index) ?? [];
+        arr.push(src);
+        byIdx.set(c.message_index, arr);
+      }
+      setLegacyCitations(legacy);
+      return msgs.map((m, i) =>
+        m.role === "assistant" && byIdx.has(i) ? { ...m, rag_sources: byIdx.get(i) } : m
+      );
+    } catch (err) {
+      console.error("No se pudieron cargar las citas de la conversación:", err);
+      setLegacyCitations([]);
+      return msgs;
+    }
+  };
+
+  // Abre el documento de una cita: .md/.txt en el visor markdown reutilizado;
+  // cualquier otro tipo (PDF incluido) vía fetch autenticado + blob en pestaña
+  // nueva (evita el 401 de window.open sin cabecera Authorization).
+  const openCitationDocument = async (src: RagSource) => {
+    if (!src.doc_id) return;
+    const ext = (src.file_type || src.filename.split(".").pop() || "").toLowerCase();
+    setOpeningDoc(true);
+    try {
+      if (ext === "md" || ext === "markdown" || ext === "txt") {
+        const result = await fetchDocumentContent(src.doc_id);
+        if (result.isJson) {
+          setViewerDoc({ title: result.filename || src.filename, content: result.content || "" });
+          setActiveCitation(null);
+        } else {
+          await openDocumentInNewTab(src.doc_id);
+        }
+      } else {
+        await openDocumentInNewTab(src.doc_id);
+      }
+    } catch (err: any) {
+      toast.error(err.message || "No se pudo abrir el documento");
+    } finally {
+      setOpeningDoc(false);
+    }
+  };
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -122,9 +198,14 @@ export default function ChatPage() {
 
   const handleSelectConversation = async (id: string) => {
     setIsLoadingHistory(true);
+    setLegacyCitations([]);
     try {
       const conv = await fetchConversation(id);
-      setMessages(conv.messages.length > 0 ? mapConversationMessages(conv) : [WELCOME_MESSAGE]);
+      if (conv.messages.length > 0) {
+        setMessages(await attachCitations(id, mapConversationMessages(conv)));
+      } else {
+        setMessages([WELCOME_MESSAGE]);
+      }
       setConversationId(id);
       router.replace(`/chat?c=${id}`, { scroll: false });
       setIsHistoryOpen(false);
@@ -158,7 +239,7 @@ export default function ChatPage() {
         const conv = await fetchConversation(conversationIdToLoad);
         const hydrated = mapConversationMessages(conv);
         if (hydrated.length > 0) {
-          setMessages(hydrated);
+          setMessages(await attachCitations(conv.id, hydrated));
         }
         setConversationId(conv.id);
         if (!urlConversationId) {
@@ -430,6 +511,7 @@ export default function ChatPage() {
             onClick={() => {
               setMessages([WELCOME_MESSAGE]);
               setConversationId(undefined);
+              setLegacyCitations([]);
               setIsHistoryOpen(false);
               router.replace("/chat", { scroll: false });
             }}
@@ -477,8 +559,33 @@ export default function ChatPage() {
         ) : (
           <>
             {messages.map((message) => (
-              <MessageBubble key={message.id} message={message} />
+              <MessageBubble key={message.id} message={message} onCiteClick={setActiveCitation} />
             ))}
+
+            {/* Fuentes de mensajes anteriores a la trazabilidad por mensaje
+                (filas rag_references con message_index null). No cuelgan de
+                ninguna burbuja: bloque único al final de la conversación. */}
+            {legacyCitations.length > 0 && (
+              <div className="ml-11 max-w-[75%] bg-gray-900/50 border border-gray-800 rounded-lg p-3 space-y-1.5">
+                <div className="flex items-center gap-1.5 text-xs text-gray-400 font-medium">
+                  <BookOpen className="w-3 h-3" /> Fuentes de mensajes anteriores a esta actualización
+                </div>
+                {legacyCitations.map((source, i) => (
+                  <button
+                    key={i}
+                    onClick={() => setActiveCitation(source)}
+                    className="w-full flex items-center justify-between text-xs group"
+                  >
+                    <span className="text-gray-300 group-hover:text-blue-400 truncate max-w-[220px] text-left" title={source.filename}>
+                      {source.filename}
+                    </span>
+                    <span className="ml-2 px-1.5 py-0.5 rounded text-xs font-mono bg-gray-800 text-gray-400">
+                      {source.relevance_score}%
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
 
             {/* Active agents indicator */}
             {activeAgents.length > 0 && (
@@ -552,11 +659,90 @@ export default function ChatPage() {
             : "Enter to send · Shift+Enter for new line · Attach images for visual analysis"}
         </p>
       </div>
+
+      {/* Ficha de cita: filename + relevancia + el chunk_content exacto que usó
+          el LLM (solo disponible en el histórico recargado), con acción para
+          abrir el documento completo. */}
+      {activeCitation && (
+        <CitationCard
+          source={activeCitation}
+          opening={openingDoc}
+          onClose={() => setActiveCitation(null)}
+          onOpenFull={() => openCitationDocument(activeCitation)}
+        />
+      )}
+
+      <DocumentViewerModal
+        isOpen={viewerDoc !== null}
+        onClose={() => setViewerDoc(null)}
+        title={viewerDoc?.title || ""}
+        content={viewerDoc?.content || ""}
+      />
     </div>
   );
 }
 
-function MessageBubble({ message }: { message: Message }) {
+function CitationCard({
+  source,
+  opening,
+  onClose,
+  onOpenFull,
+}: {
+  source: RagSource;
+  opening: boolean;
+  onClose: () => void;
+  onOpenFull: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-lg bg-gray-900 border border-gray-800 rounded-xl p-5 shadow-2xl space-y-3"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-3 border-b border-gray-800 pb-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-white font-semibold text-sm">
+              <FileText className="w-4 h-4 flex-shrink-0 text-blue-400" />
+              <span className="truncate" title={source.filename}>{source.filename}</span>
+            </div>
+            <div className="text-xs text-gray-500 mt-1 font-mono">
+              {source.relevance_score}% relevance
+              {typeof source.chunk_index === "number" ? ` · chunk #${source.chunk_index}` : ""}
+            </div>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-white p-1 flex-shrink-0">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {source.chunk_content ? (
+          <div className="max-h-[45vh] overflow-y-auto rounded-lg bg-gray-950 border border-gray-800 p-3 text-xs text-gray-300 whitespace-pre-wrap leading-relaxed">
+            {source.chunk_content}
+          </div>
+        ) : (
+          <p className="text-xs text-gray-500 italic">
+            El fragmento exacto no está disponible para este mensaje en vivo; recarga la
+            conversación para verlo. Puedes abrir el documento completo igualmente.
+          </p>
+        )}
+
+        <button
+          onClick={onOpenFull}
+          disabled={opening || !source.doc_id}
+          className="w-full flex items-center justify-center gap-2 text-xs bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg py-2 transition-colors"
+        >
+          {opening ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ExternalLink className="w-3.5 h-3.5" />}
+          Abrir documento completo
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function MessageBubble({ message, onCiteClick }: { message: Message; onCiteClick: (s: RagSource) => void }) {
   const isUser = message.role === "user";
 
   return (
@@ -602,12 +788,21 @@ function MessageBubble({ message }: { message: Message }) {
             </div>
             {message.rag_sources.map((source, i) => (
               <div key={i} className="flex items-center justify-between text-xs">
-                <span className="text-gray-300 truncate max-w-[200px]" title={source.filename}>
-                  {source.source_url ? (
-                    <a href={source.source_url} target="_blank" rel="noopener noreferrer" className="hover:text-blue-400">
+                <span className="truncate max-w-[200px]" title={source.filename}>
+                  {source.doc_id ? (
+                    <button
+                      onClick={() => onCiteClick(source)}
+                      className="text-gray-300 hover:text-blue-400 underline decoration-dotted underline-offset-2 text-left"
+                    >
+                      {source.filename}
+                    </button>
+                  ) : source.source_url ? (
+                    <a href={source.source_url} target="_blank" rel="noopener noreferrer" className="text-gray-300 hover:text-blue-400">
                       {source.filename}
                     </a>
-                  ) : source.filename}
+                  ) : (
+                    <span className="text-gray-300">{source.filename}</span>
+                  )}
                 </span>
                 <span className={clsx(
                   "ml-2 px-1.5 py-0.5 rounded text-xs font-mono",

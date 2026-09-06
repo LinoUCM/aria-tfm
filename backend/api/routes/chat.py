@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
 from uuid import UUID
 
@@ -10,7 +11,7 @@ from sqlalchemy import select
 
 from core.database import get_db, AsyncSessionLocal
 from core.security import get_current_user_data, TokenData
-from models.database import Conversation, Incident
+from models.database import Conversation, Document, Incident, RagReference
 from models.schemas import ChatRequest
 from services.sse_manager import sse_manager
 import structlog
@@ -127,6 +128,54 @@ async def get_conversation(
         # No revelamos que existe una conversación ajena: mismo 404 que "no existe"
         raise HTTPException(404, "Conversation not found")
     return conv
+
+
+@router.get("/conversations/{conversation_id}/citations")
+async def get_conversation_citations(
+    conversation_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: TokenData = Depends(get_current_user_data),
+):
+    """Filas RagReference de la conversación (join con Document), para que el
+    frontend reconstruya el bloque de fuentes de cada mensaje del asistente al
+    recargar el historial — Conversation.messages solo guarda role/content/
+    timestamp, no las citas. Mismo control de propiedad que GET /conversations/{id}.
+
+    Sin agrupar: el cliente agrupa por message_index. Las filas con
+    message_index NULL (persistidas antes de introducir la columna) van en la
+    respuesta igual; el cliente las trata como grupo aparte.
+    """
+    conv = (await db.execute(
+        select(Conversation).where(Conversation.id == conversation_id)
+    )).scalar_one_or_none()
+    if not conv:
+        raise HTTPException(404, "Conversation not found")
+    if conv.owner_username and conv.owner_username != current_user.username:
+        raise HTTPException(404, "Conversation not found")
+
+    rows = (await db.execute(
+        select(RagReference, Document)
+        .join(Document, RagReference.document_id == Document.id)
+        .where(RagReference.conversation_id == conversation_id)
+        .order_by(RagReference.message_index, RagReference.created_at)
+    )).all()
+
+    return [
+        {
+            "document_id": str(ref.document_id),
+            "filename": doc.filename,
+            "title": doc.title,
+            # file_type puede venir NULL en runbooks AUTO_GENERATED antiguos: lo
+            # derivamos de la extensión del filename, igual que get_document_content.
+            "file_type": (doc.file_type or Path(doc.filename).suffix.lstrip(".").lower() or None),
+            "relevance_score": ref.relevance_score,
+            "chunk_index": ref.chunk_index,
+            "chunk_content": ref.chunk_content,
+            "message_index": ref.message_index,
+            "created_at": ref.created_at.isoformat() if ref.created_at else None,
+        }
+        for ref, doc in rows
+    ]
 
 
 async def _process_chat(channel_id: str, conversation_id: UUID, request: ChatRequest):
