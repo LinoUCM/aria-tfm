@@ -10,7 +10,7 @@ import { formatDistanceToNow } from "date-fns";
 import toast from "react-hot-toast";
 import {
   Send, Mic, Square, Paperclip, Bot, User,
-  Loader2, AlertCircle, BookOpen, History, MessageSquare
+  Loader2, AlertCircle, BookOpen, History, MessageSquare, Globe
 } from "lucide-react";
 import { clsx } from "clsx";
 
@@ -21,8 +21,14 @@ interface Message {
   image?: string; // data URL de la imagen adjunta — solo en la sesión actual, no se persiste
   agents_used?: string[];
   rag_sources?: RagSource[];
+  web_sources?: WebSource[];
   similar_incidents?: SimilarIncident[];
   timestamp: Date;
+}
+
+interface WebSource {
+  title: string;
+  url: string;
 }
 
 interface RagSource {
@@ -201,6 +207,7 @@ export default function ChatPage() {
   // Buffer ref para acumular tokens sin depender del estado
   const contentBuffer = { current: "" };
   const ragSourcesBuffer = { current: [] as RagSource[] };
+  const webSourcesBuffer = { current: [] as WebSource[] };
   const similarBuffer = { current: [] as SimilarIncident[] };
 
   try {
@@ -267,6 +274,10 @@ export default function ChatPage() {
             ragSourcesBuffer.current = data.data.sources;
             break;
 
+          case "web_results":
+            webSourcesBuffer.current = data.data.sources;
+            break;
+
           case "similar_incidents":
             similarBuffer.current = data.data.incidents;
             break;
@@ -279,6 +290,7 @@ export default function ChatPage() {
                       ...m,
                       content: contentBuffer.current,
                       rag_sources: ragSourcesBuffer.current,
+                      web_sources: webSourcesBuffer.current,
                       similar_incidents: similarBuffer.current,
                     }
                   : m
@@ -605,6 +617,28 @@ function MessageBubble({ message }: { message: Message }) {
                 )}>
                   {source.relevance_score}%
                 </span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Web Sources */}
+        {message.web_sources && message.web_sources.length > 0 && (
+          <div className="bg-gray-900/50 border border-gray-800 rounded-lg p-3 space-y-1.5">
+            <div className="flex items-center gap-1.5 text-xs text-gray-400 font-medium">
+              <Globe className="w-3 h-3" /> Web sources
+            </div>
+            {message.web_sources.map((source, i) => (
+              <div key={i} className="flex items-center text-xs">
+                <a
+                  href={source.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-gray-300 hover:text-blue-400 truncate"
+                  title={source.url}
+                >
+                  {source.title}
+                </a>
               </div>
             ))}
           </div>

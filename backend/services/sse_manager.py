@@ -69,6 +69,9 @@ class SSEManager:
     async def rag_sources(self, channel_id: str, sources: list) -> None:
         await self.publish(channel_id, "rag_sources", {"sources": sources})
 
+    async def web_results(self, channel_id: str, sources: list) -> None:
+        await self.publish(channel_id, "web_results", {"sources": sources})
+
     async def similar_incidents(self, channel_id: str, incidents: list) -> None:
         await self.publish(channel_id, "similar_incidents", {"incidents": incidents})
 

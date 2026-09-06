@@ -429,10 +429,19 @@ Be concise. Max 150 words."""
             prefix = "SRE operations "
             truncated = query[:400 - len(prefix)].strip()
             response = client.search(query=f"{prefix}{truncated}", search_depth="basic", max_results=3)
+            # Tavily es una API externa: no asumimos que cada resultado traiga
+            # siempre title/url/content — usamos .get() con fallback para que un
+            # resultado malformado no tire abajo el nodo entero por un KeyError.
+            web_items = response.get("results", [])
             state["web_results"] = "\n\n".join([
-                f"**{r['title']}** ({r['url']})\n{r['content']}"
-                for r in response.get("results", [])
+                f"**{r.get('title', 'Untitled')}** ({r.get('url', '')})\n{r.get('content', '')}"
+                for r in web_items
             ])
+            if web_items and state.get("channel_id"):
+                await sse_manager.web_results(state["channel_id"], [
+                    {"title": r.get("title", "Untitled"), "url": r.get("url", "")}
+                    for r in web_items if r.get("url")
+                ])
         except Exception as e:
             logger.error("search_node_error", error=str(e))
             state["web_results"] = ""
@@ -470,6 +479,10 @@ Be concise, technical, and actionable. Structure your response with:
 1. Quick diagnosis
 2. Recommended steps (numbered)
 3. Relevant context from KB (cite sources)
+4. If the context contains a "## Web Search Results" section, add a separate
+   "Web sources" section at the end listing the title and URL of each web
+   result you actually used — keep these clearly distinct from KB sources and
+   do not merge web-sourced facts into your own knowledge without attribution.
 Never guess critical values."""
             else:
                 system = "You are ARIA, an expert AI assistant for Operations teams. Be brief and friendly."
