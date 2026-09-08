@@ -24,6 +24,10 @@
 # Los secretos del backend (API keys...) van en ./backend/.env (env_file).
 # ─────────────────────────────────────────────────────────────────────────────
 
+# Nombre de proyecto fijo => los volúmenes son siempre "aria_*"
+# independientemente del directorio desde el que se lance el compose.
+name: aria
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -62,13 +66,14 @@ services:
       # HNSW), NO en /chroma/chroma. El docker-compose.yml de desarrollo lo monta
       # mal en /chroma/chroma; aquí está corregido para que sí persista.
       - chromadata:/data
+    # La imagen chromadb/chroma:latest trae un HEALTHCHECK propio que en algunas
+    # versiones marca el contenedor como "unhealthy" aunque el servicio responda
+    # bien (usa herramientas que no están en el PATH de la imagen). Lo
+    # deshabilitamos: el backend depende de chromadb como `service_started` y, si
+    # arranca antes de que chroma acepte conexiones, cae y `restart:
+    # unless-stopped` lo vuelve a levantar hasta que conecta.
     healthcheck:
-      # La imagen de chroma no trae curl; comprobamos que el puerto 8000
-      # (interno) acepta conexiones con el propio Python del contenedor.
-      test: ["CMD", "python", "-c", "import socket,sys; s=socket.socket(); s.settimeout(3); sys.exit(0 if s.connect_ex(('127.0.0.1',8000))==0 else 1)"]
-      interval: 10s
-      timeout: 5s
-      retries: 15
+      disable: true
 
   ollama:
     image: ollama/ollama:latest
@@ -125,7 +130,7 @@ services:
       redis:
         condition: service_healthy
       chromadb:
-        condition: service_healthy
+        condition: service_started
       ollama:
         condition: service_started
 

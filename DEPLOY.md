@@ -243,9 +243,13 @@ scp -i ~/.ssh/aria-tfm-vm_key.pem \
 
 ```bash
 cd ~/apps/aria
-PROJ=$(docker compose -f docker-compose.prod.yml ls --format '{{.Name}}' | head -1)   # normalmente "aria"
+# El compose fija `name: aria`, así que los volúmenes son siempre "aria_*".
 
 # --- Postgres ---
+# El backend debe estar parado para poder soltar la BD (si no, "database is
+# being accessed by other users"):
+docker compose -f docker-compose.prod.yml stop backend
+
 # Recrea la BD limpia para una restauración determinista:
 docker compose -f docker-compose.prod.yml exec -T postgres \
     psql -U aria -d postgres -c "DROP DATABASE IF EXISTS aria_db;" -c "CREATE DATABASE aria_db OWNER aria;"
@@ -254,18 +258,18 @@ docker compose -f docker-compose.prod.yml exec -T postgres \
 
 # --- ChromaDB ---  (parar chroma, sustituir el volumen, arrancar)
 docker compose -f docker-compose.prod.yml stop chromadb
-docker run --rm -v ${PROJ}_chromadata:/data -v ~/:/backup alpine \
+docker run --rm -v aria_chromadata:/data -v ~/:/backup alpine \
     sh -c "rm -rf /data/* && tar xzf /backup/chroma_data.tgz -C /data"
 docker compose -f docker-compose.prod.yml start chromadb
 
 # --- uploads / storage ---
-docker run --rm -v ${PROJ}_uploads:/u -v ~/:/backup alpine \
+docker run --rm -v aria_uploads:/u -v ~/:/backup alpine \
     sh -c "tar xzf /backup/uploads.tgz -C /u"
-docker run --rm -v ${PROJ}_storage:/s -v ~/:/backup alpine \
+docker run --rm -v aria_storage:/s -v ~/:/backup alpine \
     sh -c "tar xzf /backup/storage.tgz -C /s"   # si generaste storage.tgz
 
-# Reiniciar el backend para que reconecte con la BD ya poblada
-docker compose -f docker-compose.prod.yml restart backend
+# Arrancar de nuevo el backend, ya con la BD poblada
+docker compose -f docker-compose.prod.yml start backend
 ```
 
 Comprobación rápida de conteos:
