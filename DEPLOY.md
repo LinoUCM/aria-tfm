@@ -434,8 +434,17 @@ que dispara RAG y devuelve respuesta citando documentos de la KB.
 Pendiente que **solo puede hacer Lino** (necesita su cuenta de GitHub): añadir
 la *deploy key* generada en la VM (paso 3) en
 `https://github.com/LinoUCM/aria-tfm/settings/keys`. El código ya está en la VM
-(sincronizado en este despliegue); en cuanto la key esté añadida, `git -C
-~/apps/aria pull` funcionará para las actualizaciones (paso 10).
+(sincronizado en este despliegue, contenido idéntico al de `master`), pero
+`~/apps/aria` sigue apuntando a un commit anterior con los ficheros modificados
+en el árbol de trabajo. Una vez añadida la key, alinéalo sin cambios en disco:
+
+```bash
+cd ~/apps/aria
+git fetch origin
+git reset --hard origin/master
+```
+
+A partir de ahí, para actualizar basta con el paso 10.
 
 ---
 
