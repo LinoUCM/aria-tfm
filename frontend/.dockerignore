@@ -1,0 +1,16 @@
+node_modules/
+.next/
+out/
+build/
+.git/
+.gitignore
+Dockerfile
+.dockerignore
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.tsbuildinfo
+.env*.local
+.vercel
+.DS_Store
+README.md

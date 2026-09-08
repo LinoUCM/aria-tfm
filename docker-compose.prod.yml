@@ -1,0 +1,171 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# ARIA — despliegue de PRODUCCIÓN (VM Azure, Ubuntu 24.04).
+#
+# Fichero SEPARADO de docker-compose.yml (desarrollo local de Lino), que no se
+# toca. Diferencias clave frente al de desarrollo:
+#   - backend y frontend se construyen desde sus Dockerfile de producción
+#     (uvicorn sin --reload / `next start`, multi-stage).
+#   - Postgres es un servicio más (en local corre nativo en el host).
+#   - Se añade `ollama` (embeddings bge-m3 del RAG) con volumen para no
+#     re-descargar el modelo si el contenedor se recrea.
+#   - Se añade `caddy` como reverse proxy único con TLS automático opcional.
+#   - Nada se publica al exterior salvo Caddy (:80 / :443). El resto solo es
+#     accesible dentro de la red del compose (o por 127.0.0.1 para depurar).
+#
+# Uso:
+#   docker compose -f docker-compose.prod.yml build
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# Variables leídas de ./.env (junto a este fichero, NO se commitea):
+#   DOMAIN               nombre de dominio; vacío => Caddy sirve en :80 sin TLS
+#   PUBLIC_APP_URL       URL/IP pública (para CORS del backend)
+#   POSTGRES_PASSWORD    contraseña de Postgres (default: aria)
+#   N8N_ENCRYPTION_KEY   clave de cifrado de n8n
+# Los secretos del backend (API keys...) van en ./backend/.env (env_file).
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: aria
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aria}
+      POSTGRES_DB: aria_db
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aria -d aria_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  chromadb:
+    image: chromadb/chroma:latest
+    restart: unless-stopped
+    environment:
+      - IS_PERSISTENT=TRUE
+      - ANONYMIZED_TELEMETRY=FALSE
+    volumes:
+      # OJO: chromadb/chroma:latest persiste en /data (chroma.sqlite3 + índices
+      # HNSW), NO en /chroma/chroma. El docker-compose.yml de desarrollo lo monta
+      # mal en /chroma/chroma; aquí está corregido para que sí persista.
+      - chromadata:/data
+    healthcheck:
+      # La imagen de chroma no trae curl; comprobamos que el puerto 8000
+      # (interno) acepta conexiones con el propio Python del contenedor.
+      test: ["CMD", "python", "-c", "import socket,sys; s=socket.socket(); s.settimeout(3); sys.exit(0 if s.connect_ex(('127.0.0.1',8000))==0 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    volumes:
+      - ollamadata:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+
+  n8n:
+    image: n8nio/n8n:latest
+    restart: unless-stopped
+    # Solo accesible desde la propia VM (por SSH tunnel) para configurar flujos;
+    # no se expone a Internet ni pasa por Caddy.
+    ports:
+      - "127.0.0.1:5678:5678"
+    environment:
+      - TZ=Europe/Madrid
+      - GENERIC_TIMEZONE=Europe/Madrid
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+    volumes:
+      - n8ndata:/home/node/.n8n
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    # Secretos y config del backend: API keys, N8N_WEBHOOK_URL, DATADOG_*, etc.
+    env_file:
+      - ./backend/.env
+    # `environment` tiene prioridad sobre `env_file`: aquí forzamos la topología
+    # de red del compose y el modo producción, ignorando los valores locales que
+    # pueda traer backend/.env (localhost, etc.).
+    environment:
+      - ENVIRONMENT=production
+      - DATABASE_URL=postgresql+asyncpg://aria:${POSTGRES_PASSWORD:-aria}@postgres:5432/aria_db
+      - REDIS_URL=redis://redis:6379
+      - CHROMA_HOST=chromadb
+      - CHROMA_PORT=8000
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - FRONTEND_URL=${PUBLIC_APP_URL:-http://localhost}
+      - BACKEND_URL=${PUBLIC_APP_URL:-http://localhost}
+    volumes:
+      - uploads:/app/uploads
+      - storage:/app/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      chromadb:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # Ruta RELATIVA: el navegador pide /api/... al mismo origen y Caddy lo
+        # reenvía al backend. No cambia entre acceso por IP y por dominio.
+        NEXT_PUBLIC_API_URL: /api
+    restart: unless-stopped
+    depends_on:
+      - backend
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      # Vacío => Caddy sirve en :80 sin TLS (modo interino sin dominio).
+      # Con un valor => TLS automático de Let's Encrypt para ese dominio.
+      - DOMAIN=${DOMAIN:-}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - frontend
+      - backend
+
+volumes:
+  pgdata:
+  redisdata:
+  chromadata:
+  ollamadata:
+  n8ndata:
+  uploads:
+  storage:
+  caddy_data:
+  caddy_config:

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   sendMessage, streamChat, fetchConversation, listConversations,
@@ -90,7 +90,11 @@ function formatRelative(iso: string | null): string {
   return formatDistanceToNow(new Date(hasTimezone ? iso : `${iso}Z`), { addSuffix: true });
 }
 
-export default function ChatPage() {
+// El cuerpo real de la página. Se separa del export por defecto porque usa
+// useSearchParams(), que `next build` exige envolver en un límite de Suspense
+// para poder generar la ruta (si no, el build falla con
+// "missing-suspense-with-csr-bailout"). No cambia ninguna lógica.
+function ChatPageInner() {
   const [messages, setMessages] = useState<Message[]>([WELCOME_MESSAGE]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -682,6 +686,14 @@ export default function ChatPage() {
         content={viewerDoc?.content || ""}
       />
     </div>
+  );
+}
+
+export default function ChatPage() {
+  return (
+    <Suspense fallback={null}>
+      <ChatPageInner />
+    </Suspense>
   );
 }
 

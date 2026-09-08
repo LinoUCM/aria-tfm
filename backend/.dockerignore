@@ -1,0 +1,40 @@
+# El contexto de build del backend NO debe incluir el entorno virtual local
+# (~6 GB), cachés, datos de runtime ni secretos.
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Secretos — nunca en la imagen (se inyectan por env_file en el compose)
+.env
+.env.*
+*.env
+
+# Datos de runtime (van en volúmenes, no en la imagen)
+uploads/*
+!uploads/.gitkeep
+storage/postmortems/*
+storage/runbooks/*
+!storage/**/.gitkeep
+
+# Scripts sueltos de diagnóstico / evaluación (no forman parte del servicio)
+diagnose_*.py
+cleanup_kb.py
+evaluation/
+*_[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9].py
+
+# Varios
+*.log
+*.sqlite3
+*.db
+.git/
+.gitignore
+Dockerfile
+.dockerignore

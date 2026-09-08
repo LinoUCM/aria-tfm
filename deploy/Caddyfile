@@ -1,0 +1,41 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# ARIA — reverse proxy de producción.
+#
+# {$DOMAIN::80}  →  si la variable de entorno DOMAIN está definida y no vacía,
+#                   Caddy usa ese nombre como sitio y provisiona automáticamente
+#                   un certificado TLS de Let's Encrypt (HTTP-01 por el :80).
+#                   Si DOMAIN NO está definida, el sitio es ":80": HTTP plano,
+#                   sin TLS  ← modo INTERINO mientras no haya dominio.
+#
+# Enrutado:
+#   /api/*  →  backend:8000   (se elimina el prefijo /api con handle_path)
+#   resto   →  frontend:3000  (Next.js)
+#
+# El frontend se compiló con NEXT_PUBLIC_API_URL=/api, así que el navegador
+# pide "/api/..." sobre el mismo origen y aquí se reescribe al backend. No hay
+# CORS entre navegador y API porque todo es el mismo origen.
+# ─────────────────────────────────────────────────────────────────────────────
+
+{$DOMAIN::80} {
+	encode gzip
+
+	# API del backend. handle_path quita "/api" antes de reenviar:
+	#   /api/health            -> backend:8000/health
+	#   /api/chat/stream/<id>  -> backend:8000/chat/stream/<id>  (SSE)
+	handle_path /api/* {
+		reverse_proxy backend:8000 {
+			# SSE / streaming: sin buffering, flush inmediato.
+			flush_interval -1
+		}
+	}
+
+	# Todo lo demás: la app Next.js.
+	handle {
+		reverse_proxy frontend:3000
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}
