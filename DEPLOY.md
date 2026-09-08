@@ -152,22 +152,48 @@ chmod 600 ~/apps/aria/.env ~/apps/aria/backend/.env
 
 ## 5. Construir y levantar
 
+> **IMPORTANTE — bug de BuildKit en Docker 29.x.** En esta VM,
+> `docker compose build` (y `docker build` a secas) se **cuelga** al exportar la
+> imagen del backend, que es enorme (torch + CUDA en `requirements.txt`, ~10 GB):
+> el proceso `dockerd` gira al 100 % de CPU sin escribir a disco y en el log de
+> `dockerd` aparece `session healthcheck failed fatally: only one connection
+> allowed`. Es un fallo del BuildKit integrado en el daemon con imágenes muy
+> grandes. La solución fiable es construir con un **BuildKit en contenedor**
+> (`docker buildx --driver docker-container`), que usa otra ruta de exportación.
+
 ```bash
 cd ~/apps/aria
 
-# Build (la imagen del backend es grande — torch/transformers en requirements —
-# la primera vez puede tardar 10-20 min).
-docker compose -f docker-compose.prod.yml build
+# --- 5a. BuildKit en contenedor (una sola vez) ---
+sudo docker buildx create --name ariab --driver docker-container --bootstrap --use
 
-# Arranque
-docker compose -f docker-compose.prod.yml up -d
+# --- 5b. Frontend: se construye bien por la vía normal ---
+sudo docker compose -f docker-compose.prod.yml build frontend
 
-# Estado
-docker compose -f docker-compose.prod.yml ps
+# --- 5c. Backend: con el builder en contenedor (10-20 min; la primera vez
+#         descarga e instala torch/CUDA). --load mete la imagen en el daemon. ---
+sudo docker buildx build --builder ariab --load -t aria-backend:latest ./backend
+
+# --- 5d. Arranque (sin --build: usa las imágenes ya construidas) ---
+sudo docker compose -f docker-compose.prod.yml up -d --no-build
+
+# --- 5e. Estado ---
+sudo docker compose -f docker-compose.prod.yml ps
 ```
 
-El `backend` puede reiniciarse un par de veces mientras Postgres/ChromaDB
-terminan de estar `healthy`; con `restart: unless-stopped` se estabiliza solo.
+Notas:
+
+- Durante el `--load` el disco sube bastante (la imagen del backend son ~10 GB).
+  Si te quedas corto de espacio, `sudo docker builder prune -af` libera la caché
+  de builds anteriores sin tocar el builder `ariab` en curso.
+- Con **2 workers de uvicorn**, en el **primer arranque con la BD vacía** los dos
+  ejecutan `create_all()` a la vez y uno puede registrar en el log un
+  `duplicate key ... "pg_type_typname_nsp_index" ... CREATE TYPE userrole` y morir;
+  uvicorn lo reinicia y el segundo intento ya encuentra el esquema y arranca.
+  Es inofensivo y, si vas a restaurar el dump (paso 8), ni siquiera ocurre
+  (el dump ya trae el esquema).
+- El `backend` puede reiniciarse un par de veces mientras ChromaDB/Ollama
+  terminan de arrancar; con `restart: unless-stopped` se estabiliza solo.
 
 ---
 
@@ -241,6 +267,10 @@ scp -i ~/.ssh/aria-tfm-vm_key.pem \
 
 ### 8c. Restaurar (en la VM)
 
+> La restauración de Postgres puede tardar; hazla en una sesión SSH con
+> keepalive (`ssh -o ServerAliveInterval=20 ...`) o dentro de `tmux`/`screen`
+> para que un corte de conexión no la deje a medias.
+
 ```bash
 cd ~/apps/aria
 # El compose fija `name: aria`, así que los volúmenes son siempre "aria_*".
@@ -253,8 +283,9 @@ docker compose -f docker-compose.prod.yml stop backend
 # Recrea la BD limpia para una restauración determinista:
 docker compose -f docker-compose.prod.yml exec -T postgres \
     psql -U aria -d postgres -c "DROP DATABASE IF EXISTS aria_db;" -c "CREATE DATABASE aria_db OWNER aria;"
+# ON_ERROR_STOP=1 => la restauración aborta al primer error en vez de seguir:
 docker compose -f docker-compose.prod.yml exec -T postgres \
-    psql -U aria -d aria_db < ~/aria_db.sql
+    psql -U aria -d aria_db -v ON_ERROR_STOP=1 < ~/aria_db.sql
 
 # --- ChromaDB ---  (parar chroma, sustituir el volumen, arrancar)
 docker compose -f docker-compose.prod.yml stop chromadb
@@ -299,22 +330,37 @@ curl -fsS http://9.160.105.198/api/health ; echo
 curl -fsS http://9.160.105.198/login | head -c 300 ; echo
 
 # Salud interna de cada servicio
-docker compose -f docker-compose.prod.yml exec backend  curl -fsS http://localhost:8000/health ; echo
-docker compose -f docker-compose.prod.yml exec postgres pg_isready -U aria
-docker compose -f docker-compose.prod.yml exec redis    redis-cli ping
-docker compose -f docker-compose.prod.yml exec ollama   ollama list
-curl -fsS http://9.160.105.198/api/../  >/dev/null 2>&1 || true
+docker compose -f docker-compose.prod.yml exec -T backend  curl -fsS http://localhost:8000/health ; echo
+docker compose -f docker-compose.prod.yml exec -T postgres pg_isready -U aria
+docker compose -f docker-compose.prod.yml exec -T redis    redis-cli ping
+docker compose -f docker-compose.prod.yml exec -T ollama   ollama list                       # bge-m3:latest
+docker compose -f docker-compose.prod.yml exec -T backend  curl -fsS http://chromadb:8000/api/v2/heartbeat ; echo
 ```
 
-**Prueba funcional completa** (valida Ollama + RAG + fallback LLM a la vez):
+**Prueba funcional completa** (valida embeddings `bge-m3` + ChromaDB + RAG + LLM
+a la vez). Por navegador:
 
 1. Abre `http://9.160.105.198/` en el navegador.
 2. Login con un usuario real (los migrados en el paso 8).
 3. En el chat, lanza una pregunta que dispare el RAG, p. ej.
-   *"How do I terminate idle connections exhausting the PostgreSQL connection pool?"*
+   *"How do I terminate idle connections exhausting the aria_db PostgreSQL connection pool?"*
 4. Debe responder en streaming y mostrar el bloque **“Sources consulted”** con
-   documentos citados (eso confirma que embeddings `bge-m3` + ChromaDB + LLM
-   funcionan de punta a punta).
+   documentos citados.
+
+O por API (mismo camino que usa el navegador; `/api` lo enruta Caddy al backend):
+
+```bash
+B=http://9.160.105.198
+TOKEN=$(curl -s -X POST $B/api/api/v1/auth/login \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "username=<usuario>&password=<password>" | python3 -c "import sys,json;print(json.load(sys.stdin)['access_token'])")
+
+CH=$(curl -s -X POST $B/api/chat/ -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"message":"How do I terminate idle connections exhausting the aria_db PostgreSQL connection pool?"}' \
+  | python3 -c "import sys,json;print(json.load(sys.stdin)['channel_id'])")
+
+curl -sN $B/api/chat/stream/$CH        # eventos SSE: agent_start(router/rag/synthesis), rag_sources, token..., done
+```
 
 Logs si algo falla:
 
@@ -327,17 +373,24 @@ docker compose -f docker-compose.prod.yml logs -f caddy
 
 ## 10. Actualizaciones futuras
 
-Sin CI/CD (fuera del alcance del TFM). Para desplegar cambios de `master`:
+Sin CI/CD (fuera del alcance del TFM). Para desplegar cambios de `master`
+(requiere la *deploy key* del paso 3 ya añadida en GitHub):
 
 ```bash
 cd ~/apps/aria
 git pull
-docker compose -f docker-compose.prod.yml build
-docker compose -f docker-compose.prod.yml up -d
+
+# Frontend por la vía normal; backend con el builder en contenedor (paso 5):
+docker compose -f docker-compose.prod.yml build frontend
+docker buildx build --builder ariab --load -t aria-backend:latest ./backend
+
+docker compose -f docker-compose.prod.yml up -d --no-build
 ```
 
-Los volúmenes (Postgres, ChromaDB, Ollama, uploads) persisten entre
-recreaciones de contenedor.
+Los volúmenes (Postgres, ChromaDB, Ollama, uploads, storage) persisten entre
+recreaciones de contenedor. Si sólo cambió el frontend o un fichero de config
+(compose / Caddyfile), basta con `docker compose ... up -d <servicio>` sin
+reconstruir el backend.
 
 ---
 
@@ -363,9 +416,26 @@ El frontend se compiló con `NEXT_PUBLIC_API_URL=/api` (ruta relativa), así que
    el `:80`). En ~30 s `https://aria.midominio.me` funciona con TLS y el `:80`
    redirige a `:443`.
 
-> **Modo interino actual (sin dominio):** mientras `DOMAIN` esté vacío, Caddy
-> sirve en `http://9.160.105.198` **sin TLS**. Es explícitamente temporal;
-> pásate a dominio + HTTPS en cuanto el DNS esté listo.
+> **Modo interino actual (sin dominio):** con `DOMAIN=:80` Caddy sirve en
+> `http://9.160.105.198` **sin TLS**. Es explícitamente temporal; pásate a
+> dominio + HTTPS en cuanto el DNS esté listo.
+
+---
+
+## Estado del despliegue (a fecha de esta guía)
+
+ARIA está **desplegado y funcionando** en `http://9.160.105.198`. Los 8
+contenedores arrancan (`backend`/`frontend` con healthcheck en verde), el modelo
+`bge-m3` está descargado y los datos reales están migrados (4 usuarios, 12
+documentos, 180 incidentes, 90 conversaciones; vectores de ChromaDB y ficheros
+de `uploads`/`storage`). Verificado de punta a punta: login + pregunta de chat
+que dispara RAG y devuelve respuesta citando documentos de la KB.
+
+Pendiente que **solo puede hacer Lino** (necesita su cuenta de GitHub): añadir
+la *deploy key* generada en la VM (paso 3) en
+`https://github.com/LinoUCM/aria-tfm/settings/keys`. El código ya está en la VM
+(sincronizado en este despliegue); en cuanto la key esté añadida, `git -C
+~/apps/aria pull` funcionará para las actualizaciones (paso 10).
 
 ---
 
