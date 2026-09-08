@@ -1,0 +1,130 @@
+test_id,preset_key,tier,incident_id,fired_at,predicted_root_cause,root_cause_correct,cited_sources,citation_correct,forbidden_citation_hit,forbidden_root_cause_hit,latency_seconds,status,notes,analysis_full_text,run_index
+C1-payment-no-coverage,payment_p1_error_rate,C,84a39047-c804-4d08-ab36-64a87b7c392f,2026-09-06T13:12:10.314540,aria_db,False,RB-003_PostgreSQL_Slow_Queries.pdf; RB-001_PostgreSQL_Connection_Exhaustion.pdf; RB-002_Redis_Memory_Saturation.pdf,False,True,False,18.2,OK,OJO al leer resultados: en la Fase 1 v1 este caso 'fallo' pero el texto mostro razonamiento topologico legitimo (payment-service -> aria_db es una dependencia real del sistema). No es alucinacion automatica si vuelve a pasar - leer el texto completo. El Tier E es el que da la senal limpia de alucinacion real.,"1.  **Quick diagnosis**
+    `payment-service` is experiencing a P1 incident with a critical error rate (12.3%) and severe p99 latency (4823ms). This indicates a core dependency bottleneck, most likely in `aria_db` (PostgreSQL) due to connection exhaustion or blocked transactions.
+
+2.  **Recommended steps**
+    1.  Connect to `aria_db` and query `pg_stat_activity` to identify `idle in transaction` sessions or long-running queries.
+    2.  Terminate any identified stale or blocking database connections on `aria_db`.
+    3.  Monitor `payment-service` error rate and latency for immediate recovery.
+    4.  If `aria_db` issues are not found or persist, investigate `redis-cache` saturation metrics.
+
+3.  **Relevant context from KB**
+    *   The observed metrics (12.3% error rate, 4823ms p99 latency) precisely match a prior critical degradation incident for `payment-service` linked to `aria_db` (`RUNBOOK-AUTO-ARIA_DB-b2300d9c.md`).
+    *   Symptoms are consistent with PostgreSQL slow queries (p99 > 5000ms, error rate > 3%) frequently caused by `idle in transaction` blocking queries ([RB-003_PostgreSQL_Slow_Queries.pdf]).
+    *   PostgreSQL connection pool exhaustion (`max_connections=100`) is a documented cause for high latency and HTTP 500s, with `pg_stat_activity` diagnostic steps provided ([RB-001_PostgreSQL_Connection_Exhaustion.pdf]).
+    *   Redis memory saturation can contribute with degraded latency (1500-3500ms) and moderate error rates (4-8%), though the current metrics are higher ([RB-002_Redis_Memory_Saturation.pdf]).
+
+```json
+{
+  ""root_cause"": ""aria_db"",
+  ""service_affected"": ""payment-service"",
+  ""suggested_action"": ""TERMINATE_IDLE_CONNECTIONS""
+}
+```",1
+C1-payment-no-coverage,payment_p1_error_rate,C,15c1faac-e9e6-48a9-955b-49cb7861dde2,2026-09-06T13:12:33.862641,aria_db,False,RUNBOOK-AUTO-ARIA_DB-b2300d9c.md; RUNBOOK-AUTO-PAYMENT-SERVICE-894bd98f.md; RB-003_PostgreSQL_Slow_Queries.pdf; RB-001_PostgreSQL_Connection_Exhaustion.pdf; RB-002_Redis_Memory_Saturation.pdf,False,True,False,14.8,OK,OJO al leer resultados: en la Fase 1 v1 este caso 'fallo' pero el texto mostro razonamiento topologico legitimo (payment-service -> aria_db es una dependencia real del sistema). No es alucinacion automatica si vuelve a pasar - leer el texto completo. El Tier E es el que da la senal limpia de alucinacion real.,"1.  **Quick diagnosis**
+    The `payment-service` is experiencing a P1 incident characterized by a severe error rate (12.3%) and high p99 latency (4823ms). This directly aligns with a critical degradation previously attributed to issues within the `aria_db` (PostgreSQL), specifically connection exhaustion or blocked transactions (e.g., `idle in transaction`).
+
+2.  **Recommended steps**
+    1.  **Diagnose `aria_db` connection state:** Immediately check `pg_stat_activity` on `aria_db` for active connections, `idle in transaction` states, or evidence of connection pool exhaustion.
+    2.  **Monitor `aria_db` resource utilization:** Review CPU, memory, and I/O metrics for `aria_db` for any resource contention correlating with the incident.
+    3.  **If connection exhaustion or blocking queries are identified:** Proceed with terminating idle/stale database connections.
+
+3.  **Relevant context from KB**
+    *   **[RUNBOOK-AUTO-ARIA_DB-b2300d9c.md]**: Describes an incident with identical metrics (12.3% error rate, 4823ms p99 latency) on `payment-service` linked to `aria_db` degradation, resulting in transaction failures.
+    *   **[RUNBOOK-AUTO-PAYMENT-SERVICE-894bd98f.md]**: Acknowledges `payment-service` P1 incidents and identifies PostgreSQL database (due to connection exhaustion or blocked transactions) as the most likely bottleneck.
+    *   **[RB-003_PostgreSQL_Slow_Queries.pdf]**: Symptoms (p99 > 5000ms, error rate >3%) closely match the current alert's `p99_latency_ms` (4823ms) and `error_rate` (12.3%), suggesting `idle in transaction` blocking queries as a root cause.
+    *   **[RB-001_PostgreSQL_Connection_Exhaustion.pdf]**: Describes latency and HTTP 500s due to connection pool exhaustion and outlines `pg_stat_activity` diagnostics, consistent with current observed symptoms.
+    *   **[RB-002_Redis_Memory_Saturation.pdf]**: Symptoms (1500-3500ms latency, 4-8% error rate) are less severe than the current alert (4823ms latency, 12.3% error rate), making `aria_db` a more probable primary cause than `redis-cache`.
+
+```json
+{
+  ""root_cause"": ""aria_db"",
+  ""service_affected"": ""payment-service"",
+  ""suggested_action"": ""TERMINATE_IDLE_CONNECTIONS""
+}
+```",2
+C1-payment-no-coverage,payment_p1_error_rate,C,f51b5918-5bf8-48b2-af63-93bd429274f3,2026-09-06T13:12:51.723786,aria_db,False,RUNBOOK-AUTO-ARIA_DB-b2300d9c.md; RB-003_PostgreSQL_Slow_Queries.pdf; RB-001_PostgreSQL_Connection_Exhaustion.pdf; RB-002_Redis_Memory_Saturation.pdf; RUNBOOK-AUTO-PAYMENT-SERVICE-894bd98f.md,False,True,False,14.7,OK,OJO al leer resultados: en la Fase 1 v1 este caso 'fallo' pero el texto mostro razonamiento topologico legitimo (payment-service -> aria_db es una dependencia real del sistema). No es alucinacion automatica si vuelve a pasar - leer el texto completo. El Tier E es el que da la senal limpia de alucinacion real.,"1.  **Quick diagnosis**
+    The `payment-service` is experiencing a P1 incident with a critical error rate (12.3%) and severe p99 latency (4823ms). This indicates a critical bottleneck in a core dependency, most likely the `aria_db` (PostgreSQL database) due to connection exhaustion or blocked transactions.
+
+2.  **Recommended steps**
+    1.  Immediately assess `aria_db` connection pool status and identify `idle in transaction` queries using `pg_stat_activity`.
+    2.  Terminate identified long-running or blocking database connections/transactions.
+    3.  Monitor `payment-service` error rate and latency metrics for immediate recovery.
+    4.  If symptoms persist, investigate `redis-cache` for potential saturation, though it is a secondary suspect.
+
+3.  **Relevant context from KB**
+    *   The observed `error_rate` (12.3%) and `p99_latency_ms` (4823ms) on `payment-service` align directly with a P1 degradation incident linked to `aria_db` ([RUNBOOK-AUTO-ARIA_DB-b2300d9c.md]).
+    *   These metrics closely match symptoms described for `[RB-003_PostgreSQL_Slow_Queries.pdf]` where severe latency (p99 > 5000ms) and high error rates (>3%) often indicate `idle in transaction` blocking queries.
+    *   `[RB-001_PostgreSQL_Connection_Exhaustion.pdf]` details how connection pool exhaustion leads to similar latency and HTTP 500 errors, which aligns with the reported symptoms and the need to inspect `pg_stat_activity`.
+    *   `[RB-002_Redis_Memory_Saturation.pdf]` presents less severe symptoms (1500-3500ms latency, 4-8% error) but is a potential contributing factor if primary database issues are resolved.
+    *   Multiple similar P1 incidents titled ""High error rate on payment-service"" have been recorded previously ([RUNBOOK-AUTO-PAYMENT-SERVICE-894bd98f.md]).
+
+```json
+{
+  ""root_cause"": ""aria_db"",
+  ""service_affected"": ""payment-service"",
+  ""suggested_action"": ""TERMINATE_IDLE_CONNECTIONS""
+}
+```",3
+C2-gateway-no-coverage,api_gateway_p2_502,C,94accfcc-cef1-4a0e-ba9b-a27dea755c4b,2026-09-06T13:13:11.033201,external,False,RUNBOOK-AUTO-API-GATEWAY-191861cc.md,True,False,False,27.0,OK,"Mismo caveat que C1: api-gateway -> aria_db/redis-cache es una dependencia topologica real, no una invencion.","1.  **Quick diagnosis**
+    API Gateway is experiencing a P2 incident with 8.7% 502 errors due to upstream service timeouts. The likely root cause is saturation of an external `auth-service` dependency combined with PostgreSQL connection issues.
+
+2.  **Recommended steps**
+    1.  Verify the operational status and saturation metrics of the `auth-service` dependency.
+    2.  Monitor `aria_db` connection pool metrics for signs of exhaustion.
+    3.  Initiate automated action: `TERMINATE_IDLE_CONNECTIONS` on `aria_db` to alleviate PostgreSQL connection issues.
+    4.  Monitor `api-gateway` 502 error rate and `upstream_timeout_ms` for reduction and service recovery.
+    5.  If `auth-service` saturation persists, escalate to the responsible external vendor or team.
+
+3.  **Relevant context from KB**
+    The incident aligns directly with **[RUNBOOK-AUTO-API-GATEWAY-191861cc.md]** ""Resolución de Errores 502 en API Gateway por Saturación de auth-service y Conexiones PostgreSQL"".
+    *   **Contexto del Incidente** confirms the `api-gateway` service affected, 8.7% 502 errors, and upstream timeouts.
+    *   **Descripción y Causa Raíz** explicitly states: ""El `api-gateway` experimentó una elevación significativa en la tasa de errores HTTP 502... se manifestó como tiempos de espera (`timeout`) al intentar comunicarse con los servicios upstream... Causa Raíz: Saturación de `auth-service` y Conexiones PostgreSQL.""
+
+```json
+{
+  ""root_cause"": ""external"",
+  ""service_affected"": ""external"",
+  ""suggested_action"": ""TERMINATE_IDLE_CONNECTIONS""
+}
+```",1
+C2-gateway-no-coverage,api_gateway_p2_502,C,f3d62a28-25c9-4057-b7ee-dd354feb14c7,2026-09-06T13:13:42.644296,aria_db,False,RUNBOOK-AUTO-API-GATEWAY-191861cc.md; RUNBOOK-AUTO-API-GATEWAY-191861cc.md,True,False,False,14.6,OK,"Mismo caveat que C1: api-gateway -> aria_db/redis-cache es una dependencia topologica real, no una invencion.","1.  **Quick diagnosis**
+    API Gateway is experiencing a P2 incident with an 8.7% 502 error rate, indicating upstream service timeouts. Only 2 of 5 upstream services are currently healthy. This often points to resource exhaustion in backend dependencies, potentially PostgreSQL connection saturation.
+
+2.  **Recommended steps**
+    1.  Monitor `api-gateway` and relevant upstream service dashboards for continued 502 errors and latency trends.
+    2.  Investigate `aria_db` connection pool metrics (e.g., active connections, idle connections, pool utilization) for saturation or elevated connection counts coinciding with the incident.
+    3.  If `aria_db` connection saturation is confirmed, execute the `TERMINATE_IDLE_CONNECTIONS` automated action.
+    4.  Review logs from `api-gateway` and its immediate upstream services (e.g., `payment-service`, `checkout-service`) for specific error messages or timeout details that could identify the specific failing upstream.
+
+3.  **Relevant context from KB**
+    -   This incident aligns with a past P2 `api-gateway` incident (`191861cc-da4b-4334-905d-473efcc2eba0`) characterized by 8.7% 502 upstream errors and timeouts. ([RUNBOOK-AUTO-API-GATEWAY-191861cc.md])
+    -   The described root cause for similar incidents is saturation of `auth-service` and PostgreSQL connections, leading to unresponsive backends. ([RUNBOOK-AUTO-API-GATEWAY-191861cc.md])
+
+```json
+{
+  ""root_cause"": ""aria_db"",
+  ""service_affected"": ""api-gateway"",
+  ""suggested_action"": ""TERMINATE_IDLE_CONNECTIONS""
+}
+```",2
+C2-gateway-no-coverage,api_gateway_p2_502,C,ec138f35-9ef2-4309-8602-1b8cc9f2dfb3,2026-09-06T13:14:00.274293,aria_db,False,RUNBOOK-AUTO-API-GATEWAY-191861cc.md,True,False,False,16.6,OK,"Mismo caveat que C1: api-gateway -> aria_db/redis-cache es una dependencia topologica real, no una invencion.","1.  **Quick diagnosis**
+    `api-gateway` is experiencing P2 severity 502 errors (8.7% of requests) due to upstream service timeouts. This incident pattern frequently correlates with saturation of an upstream `auth-service` and subsequent PostgreSQL connection pool exhaustion.
+
+2.  **Recommended steps**
+    1.  Immediately verify the connection pool status and active connections on `aria_db` (PostgreSQL).
+    2.  Review logs and metrics for `auth-service` (if accessible) for signs of high load, slow queries, or increased error rates.
+    3.  Monitor `api-gateway` upstream health metrics, specifically for `auth-service`, to identify specific backend latency.
+    4.  If `aria_db` connection pool exhaustion is confirmed, consider scaling `auth-service` instances or optimizing its database interactions.
+
+3.  **Relevant context from KB**
+    This incident closely matches a previous `P2 API Gateway — 502 upstream errors elevated` event, where the root cause was identified as `auth-service` saturation and PostgreSQL connection issues. The observed 8.7% 502 error rate and upstream timeouts are consistent with this runbook's description.
+    (Source: [RUNBOOK-AUTO-API-GATEWAY-191861cc.md])
+
+```json
+{
+  ""root_cause"": ""aria_db"",
+  ""service_affected"": ""api-gateway"",
+  ""suggested_action"": ""TERMINATE_IDLE_CONNECTIONS""
+}
+```",3

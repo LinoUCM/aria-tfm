@@ -11,10 +11,6 @@ Cambios respecto a v1:
     aria_db, redis-cache). Si el sistema igualmente "diagnostica" aria_db o
     cualquier nodo interno aqui, eso SI es una alucinacion real, no
     razonamiento legitimo por dependencias.
-  - v4: /incidents ahora requiere autenticacion JWT (antes era publico). Se
-    añade login previo via /api/v1/auth/login (OAuth2PasswordRequestForm) y
-    se reutiliza el token en cada sondeo. Credenciales por variable de
-    entorno (ARIA_EVAL_USERNAME / ARIA_EVAL_PASSWORD), nunca en el codigo.
 
 Mide, contra el sistema REAL en marcha (no mocks):
   M1 - Precision de causa raiz (root cause)
@@ -23,8 +19,6 @@ Mide, contra el sistema REAL en marcha (no mocks):
 
 Uso:
     cd backend
-    export ARIA_EVAL_USERNAME="tu_usuario_o_email"
-    export ARIA_EVAL_PASSWORD="tu_contraseña"
     python3 -m evaluation.run_evaluation
 
 Requiere: el backend corriendo en http://localhost:8000 (uvicorn --reload)
@@ -34,7 +28,6 @@ Salida: evaluation/results_TIMESTAMP.csv + resumen impreso en consola
 import argparse
 import asyncio
 import csv
-import os
 import re
 import time
 from dataclasses import dataclass, field
@@ -50,11 +43,6 @@ POLL_TIMEOUT_S = 90.0
 
 RESULTS_DIR = Path(__file__).parent
 RESULTS_DIR.mkdir(exist_ok=True)
-
-# Credenciales para /api/v1/auth/login: se leen de variables de entorno para
-# no dejarlas nunca escritas en el codigo ni en el repositorio.
-EVAL_USERNAME = os.environ.get("ARIA_EVAL_USERNAME")
-EVAL_PASSWORD = os.environ.get("ARIA_EVAL_PASSWORD")
 
 # Nodos que el sistema conoce explicitamente (ver SYSTEM TOPOLOGY NODES en
 # agents/orchestrator.py -> analyze_incident). Cualquier caso Tier E que
@@ -218,24 +206,6 @@ def any_substring_match(candidates: list[str], text: str) -> bool:
     return any(c.lower() in text_low for c in candidates)
 
 
-async def get_auth_headers(client: httpx.AsyncClient) -> dict:
-    """/incidents ahora requiere JWT (antes era publico). Login previo contra
-    /api/v1/auth/login con OAuth2PasswordRequestForm (form-encoded, no JSON).
-    Credenciales por variable de entorno para no dejarlas en el codigo."""
-    if not EVAL_USERNAME or not EVAL_PASSWORD:
-        print("[ERROR] Define ARIA_EVAL_USERNAME y ARIA_EVAL_PASSWORD (usuario "
-              "existente en la BD) como variables de entorno antes de ejecutar "
-              "el harness.")
-        raise SystemExit(1)
-    resp = await client.post(
-        f"{BASE_URL}/api/v1/auth/login",
-        data={"username": EVAL_USERNAME, "password": EVAL_PASSWORD},
-    )
-    resp.raise_for_status()
-    token = resp.json()["access_token"]
-    return {"Authorization": f"Bearer {token}"}
-
-
 async def fire_test_case(client: httpx.AsyncClient, tc: TestCase) -> str:
     if tc.custom_payload is not None:
         resp = await client.post(f"{BASE_URL}/simulator/custom", json=tc.custom_payload)
@@ -246,10 +216,10 @@ async def fire_test_case(client: httpx.AsyncClient, tc: TestCase) -> str:
     return data["incident_id"]
 
 
-async def wait_for_analysis(client: httpx.AsyncClient, incident_id: str, headers: dict) -> tuple[Optional[dict], float]:
+async def wait_for_analysis(client: httpx.AsyncClient, incident_id: str) -> tuple[Optional[dict], float]:
     start = time.monotonic()
     while (time.monotonic() - start) < POLL_TIMEOUT_S:
-        resp = await client.get(f"{BASE_URL}/incidents", headers=headers)
+        resp = await client.get(f"{BASE_URL}/incidents")
         resp.raise_for_status()
         incidents = resp.json()
         incidents = incidents if isinstance(incidents, list) else incidents.get("incidents", [])
@@ -261,14 +231,14 @@ async def wait_for_analysis(client: httpx.AsyncClient, incident_id: str, headers
     return None, time.monotonic() - start
 
 
-async def run_test_case(client: httpx.AsyncClient, tc: TestCase, headers: dict) -> dict:
+async def run_test_case(client: httpx.AsyncClient, tc: TestCase) -> dict:
     label = tc.preset_key or "custom_payload"
     print(f"\n[{tc.test_id}] Disparando '{label}'...")
     fired_at = datetime.now().isoformat()
     incident_id = await fire_test_case(client, tc)
     print(f"   -> incident_id={incident_id}, esperando analisis (timeout {POLL_TIMEOUT_S:.0f}s)...")
 
-    inc, elapsed = await wait_for_analysis(client, incident_id, headers)
+    inc, elapsed = await wait_for_analysis(client, incident_id)
 
     if inc is None:
         print(f"   [TIMEOUT] No hubo analisis en {POLL_TIMEOUT_S:.0f}s")
@@ -361,13 +331,11 @@ async def main():
             print("¿Esta uvicorn corriendo? (uvicorn main:app --reload --port 8000)")
             return
 
-        headers = await get_auth_headers(client)
-
         for tc in cases:
             for run_idx in range(1, args.repeats + 1):
                 if args.repeats > 1:
                     print(f"\n--- {tc.test_id} (intento {run_idx}/{args.repeats}) ---")
-                result = await run_test_case(client, tc, headers)
+                result = await run_test_case(client, tc)
                 result["run_index"] = run_idx
                 results.append(result)
                 await asyncio.sleep(3)

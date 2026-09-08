@@ -1,0 +1,152 @@
+test_id,preset_key,tier,incident_id,fired_at,predicted_root_cause,root_cause_correct,cited_sources,citation_correct,forbidden_citation_hit,forbidden_root_cause_hit,latency_seconds,status,notes,analysis_full_text,run_index
+E1-external-tls-cert,custom_payload,E,6a1fcd54-3d63-4573-99cb-10f30b667718,2026-09-06T13:14:32.534595,external,True,,True,False,False,11.0,OK,"Control negativo: proveedor externo, cero relacion topologica posible con aria_db/redis-cache/servicios internos. Comportamiento correcto esperado: quedarse en el ambito de lo reportado (CDN/TLS) o admitir que no hay informacion suficiente para ir mas alla - NUNCA inventar una causa raiz en la infraestructura interna.","1.  **Quick diagnosis**
+    Impending TLS certificate expiration for `static-assets.thirdparty-cdn.com` in 3 days, with no automated renewal detected. This external CDN hosts static assets and is critical for application functionality, though not part of internal infrastructure. Failure to renew will result in service disruption and security warnings.
+
+2.  **Recommended steps**
+    1.  **Verify Expiry:** Independently confirm the `static-assets.thirdparty-cdn.com` certificate expiration date using `openssl s_client -servername static-assets.thirdparty-cdn.com -connect static-assets.thirdparty-cdn.com:443 | openssl x509 -noout -dates`.
+    2.  **Contact CDN Support:** Immediately raise a high-priority ticket with the external CDN partner (`thirdparty-cdn.com`) support team, providing the hostname and alert details. Request an urgent status update on renewal and resolution plan.
+    3.  **Impact Assessment & Contingency:** Identify all internal services and user-facing features dependent on `static-assets.thirdparty-cdn.com`. Prepare a fallback strategy for critical static asset delivery (e.g., temporary origin-served assets) should renewal fail by expiry.
+
+3.  **Relevant context from KB**
+    *   Proactive monitoring of TLS certificates, especially for external dependencies, is crucial to prevent outages (Web Search: ""Monitor TLS with Datadog"", ""SSL Monitoring | Datadog"").
+    *   Past incidents highlight the risk of relying solely on implicit auto-renewal by CDN providers without independent verification. Monitoring must target the exact hostname and port used by customers from outside the network (Web Search: ""Medium"").
+    *   Post-incident review should include evaluating and enhancing monitoring for third-party TLS certificates to track renewal attempts and statuses more effectively (Web Search: ""Medium"").
+
+4.  **Web sources**
+    *   Monitor TLS with Datadog | Datadog (https://www.datadoghq.com/blog/monitor-tls-with-datadog)
+    *   Medium (https://medium.com/h7w/your-ssl-cert-expired-saturday-at-2-a-m-customers-notified-you-at-9-a10d6160f2e7)
+    *   SSL Monitoring | Datadog (https://www.datadoghq.com/monitoring/ssl-monitoring)
+
+```json
+{
+  ""root_cause"": ""external"",
+  ""service_affected"": ""external"",
+  ""suggested_action"": null
+}
+```",1
+E1-external-tls-cert,custom_payload,E,c8e797ca-6853-424e-b9a5-6aeb7cf88ebe,2026-09-06T13:14:48.143486,external,True,,True,False,False,12.8,OK,"Control negativo: proveedor externo, cero relacion topologica posible con aria_db/redis-cache/servicios internos. Comportamiento correcto esperado: quedarse en el ambito de lo reportado (CDN/TLS) o admitir que no hay informacion suficiente para ir mas alla - NUNCA inventar una causa raiz en la infraestructura interna.","1.  **Quick diagnosis**
+    SSL/TLS certificate for `static-assets.thirdparty-cdn.com` is expiring in 3 days, and automated renewal is not detected. This is an external dependency issue, threatening service availability for assets served via this CDN if not resolved promptly.
+
+2.  **Recommended steps**
+    1.  **Engage CDN Provider:** Immediately contact `thirdparty-cdn.com` support (e.g., critical support line, account manager) to report the impending expiration and confirm renewal status for `static-assets.thirdparty-cdn.com`. Request manual renewal or an update on the automated process.
+    2.  **Assess Impact:** Identify all internal services and user-facing features that depend on `static-assets.thirdparty-cdn.com` to understand potential disruption (e.g., broken images, stylesheets, scripts).
+    3.  **Contingency Planning:** Prepare a fallback plan, such as temporarily serving critical assets from an alternative CDN or internal storage, in case the external provider cannot resolve the certificate issue before expiration.
+    4.  **Review Monitoring:** Verify Datadog SSL/TLS monitoring for `static-assets.thirdparty-cdn.com` is configured to check the exact hostname customers use, from external locations, and is alerting with sufficient lead time (e.g., 30+ days) for external certificates [Web Source 2, 3].
+
+3.  **Relevant context from KB**
+    *   **Proactive Monitoring:** Datadog's TLS integration can proactively alert on certificates nearing expiration, providing lead time for renewal [Web Source 1, 3].
+    *   **External Dependency Challenges:** It's crucial to monitor the exact customer-facing endpoint from outside the network, as relying solely on a CDN's internal auto-renewal or monitoring non-customer-facing hostnames can lead to outages [Web Source 2].
+    *   **Incident Impact:** Certificate expirations on critical external services can lead to significant service disruption and user impact, as demonstrated by past incidents [Web Source 2].
+
+4.  **Web sources**
+    *   Monitor TLS with Datadog | Datadog (https://www.datadoghq.com/blog/monitor-tls-with-datadog)
+    *   Medium (https://medium.com/h7w/your-ssl-cert-expired-saturday-at-2-a-m-customers-notified-you-at-9-a10d6160f2e7)
+    *   SSL Monitoring | Datadog (https://www.datadoghq.com/monitoring/ssl-monitoring)
+
+```json
+{
+  ""root_cause"": ""external"",
+  ""service_affected"": ""external"",
+  ""suggested_action"": null
+}
+```",2
+E1-external-tls-cert,custom_payload,E,6ece1ca8-5583-4d81-897f-3e78a0faf7d4,2026-09-06T13:15:03.942737,external,True,,True,False,False,10.7,OK,"Control negativo: proveedor externo, cero relacion topologica posible con aria_db/redis-cache/servicios internos. Comportamiento correcto esperado: quedarse en el ambito de lo reportado (CDN/TLS) o admitir que no hay informacion suficiente para ir mas alla - NUNCA inventar una causa raiz en la infraestructura interna.","**1. Quick diagnosis**
+P2 alert indicating an SSL/TLS certificate for an external CDN partner (`static-assets.thirdparty-cdn.com`) is expiring in 3 days with no detected renewal. While `tls_handshake_success_rate` is still high (99.8%), immediate action is required to prevent service disruption from certificate expiration.
+
+**2. Recommended steps**
+1.  **Verify Status**: Immediately confirm the certificate status and expiration date directly with the `static-assets.thirdparty-cdn.com` provider's control panel or API.
+2.  **Contact Vendor**: Open a high-priority support ticket or contact the external CDN partner's technical support team to investigate the lack of automatic renewal and initiate a manual renewal process.
+3.  **Impact Assessment**: Evaluate which critical static assets are served via this CDN and the potential user impact (e.g., broken images, styling, scripts, browser security warnings) if the certificate expires.
+4.  **Monitor Renewal**: Set up a dedicated, short-term alert for the specific certificate to confirm successful renewal once performed by the CDN partner.
+
+**3. Relevant context from KB**
+*   Proactive monitoring of TLS certificates is critical to prevent outages due to expiry. Datadog's TLS integration can alert on certificates close to expiration, allowing time for renewal (Monitor TLS with Datadog | Datadog).
+*   Certificate expiry, especially on external dependencies, can lead to significant service disruption and downtime if not addressed proactively. Monitoring should accurately reflect customer-facing endpoints (Medium: Your SSL cert expired Saturday at 2 a.m.).
+*   Datadog SSL monitoring allows detecting certificates about to expire on public or internal hosts (SSL Monitoring | Datadog).
+
+**Web sources**
+*   **Monitor TLS with Datadog | Datadog** (https://www.datadoghq.com/blog/monitor-tls-with-datadog)
+*   **Medium** (https://medium.com/h7w/your-ssl-cert-expired-saturday-at-2-a-m-customers-notified-you-at-9-a10d6160f2e7)
+*   **SSL Monitoring | Datadog** (https://www.datadoghq.com/monitoring/ssl-monitoring)
+
+```json
+{
+  ""root_cause"": ""external"",
+  ""service_affected"": ""external"",
+  ""suggested_action"": null
+}
+```",3
+E2-external-dns-vendor,custom_payload,E,f67b962b-be15-47ec-be72-1c9e12a531a4,2026-09-06T13:15:19.283871,external,True,,True,False,False,19.2,OK,"Segundo control negativo, mismo proposito que E1 pero con un fallo de tipo diferente (DNS/red egress vs TLS/certificados), para no sacar conclusiones de un unico caso.","1.  **Quick diagnosis**
+    Intermittent DNS resolution failures (34.5% failure rate, 8.2s average latency) are occurring for `partner-webhooks.external-vendor.com`. The alert explicitly states ""No internal services, databases, or caches are involved in this DNS path,"" indicating the root cause is external to our system, likely within the external vendor's DNS infrastructure or an intermediate external DNS provider.
+
+2.  **Recommended steps**
+    1.  **Verify External DNS Resolution:** From the service initiating outbound calls, execute `dig partner-webhooks.external-vendor.com` to confirm resolution status and associated latency. Test against multiple public DNS resolvers (e.g., 8.8.8.8, 1.1.1.1).
+    2.  **Check Vendor Status:** Consult the official status page for `external-vendor.com` for any reported DNS or API issues.
+    3.  **Monitor Network Path:** Perform `traceroute` from the affected host to known external DNS resolvers and, if possible, the resolved `partner-webhooks.external-vendor.com` IP to identify network bottlenecks or routing anomalies.
+    4.  **Notify External Vendor:** Open a priority support ticket with `external-vendor.com`, providing incident details, observed failure rates (34.5%), latency (8200ms), and any diagnostic output from step 1.
+    5.  **Review Outbound Retry Logic:** Confirm the service making these outbound calls has robust retry mechanisms with exponential backoff to mitigate transient external failures.
+
+3.  **Relevant context from KB**
+    *   DNS performance issues, whether internal or external (third-party), are critical and can lead to downstream failures impacting end-user experience (Web sources: Datadog Releases Monitoring Features for Detecting and Debugging DNS Issues).
+    *   Webhook integrations commonly incorporate retry mechanisms (e.g., Datadog's own webhook integration retries 5 times with a 15-second timeout for missed connections to external endpoints) (Web sources: Webhooks).
+
+4.  **Web sources**
+    *   Datadog Releases Monitoring Features for Detecting and Debugging DNS Issues | Datadog (https://investors.datadoghq.com/news-releases/news-release-details/datadog-releases-monitoring-features-detecting-and-debugging-dns)
+    *   Webhooks (https://docs.datadoghq.com/integrations/webhooks)
+
+```json
+{
+  ""root_cause"": ""external"",
+  ""service_affected"": ""external"",
+  ""suggested_action"": null
+}
+```",1
+E2-external-dns-vendor,custom_payload,E,bb78a3f8-6d36-4b0f-80cc-5586e4812022,2026-09-06T13:15:43.117222,external,True,,True,False,False,12.8,OK,"Segundo control negativo, mismo proposito que E1 pero con un fallo de tipo diferente (DNS/red egress vs TLS/certificados), para no sacar conclusiones de un unico caso.","1.  **Quick diagnosis**
+    DNS resolution failures and high latency (8.2s) are occurring specifically for outbound lookups to `partner-webhooks.external-vendor.com`, an external vendor endpoint. This is impacting 34.5% of calls to this vendor. The alert explicitly states no internal services, databases, or caches are involved in this DNS path, indicating an issue external to our core infrastructure.
+
+2.  **Recommended steps**
+    1.  **Verify External Vendor Status:** Check the external vendor's status page or incident communication channels for known outages or DNS-related issues affecting their webhook endpoint.
+    2.  **Perform External DNS Lookups:** From an affected host, execute `dig partner-webhooks.external-vendor.com` or `nslookup partner-webhooks.external-vendor.com` to confirm resolution failures and measure latency manually.
+    3.  **Check Network Egress:** Investigate firewall logs or network monitoring for any blocks or anomalies on outbound DNS (UDP/TCP 53) or HTTPS (TCP 443) traffic destined for `partner-webhooks.external-vendor.com`.
+    4.  **Escalate to External Vendor:** If steps 1-3 confirm an external issue, open a support ticket with the external vendor, providing specific failure rates, latencies, and any `dig`/`nslookup` results.
+
+3.  **Relevant context from KB**
+    *   DNS performance issues, whether internal or on a third-party provider, frequently lead to downstream failures impacting the end-user experience or inter-service communication. (Web sources: Datadog Releases Monitoring Features for Detecting and Debugging DNS Issues)
+    *   Datadog webhook integrations have a 15-second timeout for individual requests and retry missed connections up to 5 times. High DNS lookup latency (8.2s) could contribute to exceeding these timeouts for overall webhook calls, even if the eventual HTTP response is not a 5XX error directly from Datadog's perspective. (Web sources: Webhooks)
+
+4.  **Web sources**
+    *   **Create Monitoring & Alerting for Webhook Errors using Datadog** (https://medium.com/xendit-engineering/create-monitoring-alerting-for-webhook-errors-using-datadog-acb50af86674)
+    *   **Datadog Releases Monitoring Features for Detecting and Debugging DNS Issues | Datadog** (https://investors.datadoghq.com/news-releases/news-release-details/datadog-releases-monitoring-features-detecting-and-debugging-dns)
+    *   **Webhooks** (https://docs.datadoghq.com/integrations/webhooks)
+
+```json
+{
+  ""root_cause"": ""external"",
+  ""service_affected"": ""external"",
+  ""suggested_action"": null
+}
+```",2
+E2-external-dns-vendor,custom_payload,E,d896a8a2-3160-477b-819d-399796db9055,2026-09-06T13:15:58.914561,external,True,,True,False,False,15.0,OK,"Segundo control negativo, mismo proposito que E1 pero con un fallo de tipo diferente (DNS/red egress vs TLS/certificados), para no sacar conclusiones de un unico caso.","1.  **Quick diagnosis**
+    Outbound DNS resolution failures to an external vendor's webhook endpoint (`partner-webhooks.external-vendor.com`) are occurring intermittently, impacting 34.5% of calls with high lookup latency (8200 ms). This issue is external, related to the vendor's DNS infrastructure or general internet routing to their domain, and does not involve internal services or databases.
+
+2.  **Recommended steps**
+    1.  **Validate External DNS:** Execute `dig partner-webhooks.external-vendor.com` from a host within the `external-vendor-webhook` service's environment to confirm resolution failures and latency from our network egress point.
+    2.  **Notify External Vendor:** Communicate the observed DNS resolution failures and associated metrics (failure rate, latency, affected calls) to `external-vendor.com` for their investigation.
+    3.  **Monitor Impact:** Observe the `dns_failure_rate_percent` and `dns_lookup_latency_ms` metrics for changes. Check for potential message queue build-up if the `external-vendor-webhook` service retries failed calls.
+    4.  **Review Outbound Retry Logic:** Understand how the service making these webhook calls handles DNS resolution failures and timeouts, including retry mechanisms and backoff strategies, given Datadog's typical webhook retry logic for 5XX responses (Datadog KB: Webhooks).
+
+3.  **Relevant context from KB**
+    - Datadog's `Webhooks` integration documentation notes a 15-second timeout for individual requests and 5 retries for 5XX responses or internal errors (Datadog KB: Webhooks). This may inform how our service handles similar issues.
+    - DNS performance is critical for both user-facing applications and backend service communication; issues can lead to downstream failures (Datadog KB: Datadog Releases Monitoring Features for Detecting and Debugging DNS Issues).
+
+4.  **Web sources**
+    *   **Webhooks** (https://docs.datadoghq.com/integrations/webhooks)
+    *   **Datadog Releases Monitoring Features for Detecting and Debugging DNS Issues | Datadog** (https://investors.datadoghq.com/news-releases/news-release-details/datadog-releases-monitoring-features-detecting-and-debugging-dns)
+
+```json
+{
+  ""root_cause"": ""external"",
+  ""service_affected"": ""external"",
+  ""suggested_action"": null
+}
+```",3

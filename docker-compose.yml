@@ -65,8 +65,21 @@ services:
       - IS_PERSISTENT=TRUE
       - ANONYMIZED_TELEMETRY=FALSE
 
+  n8n:
+    image: n8nio/n8n:latest
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    environment:
+      - TZ=Europe/Madrid
+      - GENERIC_TIMEZONE=Europe/Madrid
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+    volumes:
+      - n8n_data:/home/node/.n8n
+
 volumes:
   postgres_data:
   redis_data:
   chroma_data:
   aria_uploads:
+  n8n_data:
