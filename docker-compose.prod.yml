@@ -17,7 +17,7 @@
 #   docker compose -f docker-compose.prod.yml up -d
 #
 # Variables leídas de ./.env (junto a este fichero, NO se commitea):
-#   DOMAIN               nombre de dominio; vacío => Caddy sirve en :80 sin TLS
+#   DOMAIN               ":80" (interino, HTTP sin TLS) o un hostname (HTTPS auto)
 #   PUBLIC_APP_URL       URL/IP pública (para CORS del backend)
 #   POSTGRES_PASSWORD    contraseña de Postgres (default: aria)
 #   N8N_ENCRYPTION_KEY   clave de cifrado de n8n
@@ -153,9 +153,9 @@ services:
       - "80:80"
       - "443:443"
     environment:
-      # Vacío => Caddy sirve en :80 sin TLS (modo interino sin dominio).
-      # Con un valor => TLS automático de Let's Encrypt para ese dominio.
-      - DOMAIN=${DOMAIN:-}
+      # Vacío/sin definir => ":80" => Caddy sirve HTTP plano en el puerto 80
+      # (modo interino sin dominio). Un hostname => TLS automático de Let's Encrypt.
+      - DOMAIN=${DOMAIN:-:80}
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data

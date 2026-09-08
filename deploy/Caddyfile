@@ -1,11 +1,13 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # ARIA — reverse proxy de producción.
 #
-# {$DOMAIN::80}  →  si la variable de entorno DOMAIN está definida y no vacía,
-#                   Caddy usa ese nombre como sitio y provisiona automáticamente
-#                   un certificado TLS de Let's Encrypt (HTTP-01 por el :80).
-#                   Si DOMAIN NO está definida, el sitio es ":80": HTTP plano,
-#                   sin TLS  ← modo INTERINO mientras no haya dominio.
+# {$DOMAIN}  →  dirección del sitio, inyectada por docker-compose.prod.yml.
+#   - Sin dominio todavía  → DOMAIN=:80  → HTTP plano en el puerto 80, sin TLS
+#                            (modo INTERINO, documentado como temporal en DEPLOY.md).
+#   - Con dominio (p. ej. aria.midominio.me) → Caddy provisiona automáticamente
+#     un certificado TLS de Let's Encrypt (HTTP-01 por el :80) y redirige 80→443.
+# El compose pone DOMAIN=:80 por defecto cuando la variable está vacía o sin
+# definir, así que aquí siempre llega un valor válido.
 #
 # Enrutado:
 #   /api/*  →  backend:8000   (se elimina el prefijo /api con handle_path)
@@ -16,7 +18,7 @@
 # CORS entre navegador y API porque todo es el mismo origen.
 # ─────────────────────────────────────────────────────────────────────────────
 
-{$DOMAIN::80} {
+{$DOMAIN} {
 	encode gzip
 
 	# API del backend. handle_path quita "/api" antes de reenviar:
