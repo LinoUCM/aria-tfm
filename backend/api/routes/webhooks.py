@@ -71,7 +71,7 @@ async def _send_n8n_notification(incident_id: str, payload_dict: dict):
         "incident_id": incident_id,
         "severity": payload_dict.get("priority", "P3"),
         "message_text": f"🚨 *Alerta ARIA: {payload_dict.get('title', 'Sin título')}*\n\n*ID Incidente:* `{incident_id}`\n*Estado:* Generado automáticamente por la plataforma.",
-        "dashboard_url": f"http://localhost:3000/incidents/{incident_id}",
+        "dashboard_url": f"{settings.frontend_url.rstrip('/')}/incidents/{incident_id}",
         "raw_payload": payload_dict,
     }
 

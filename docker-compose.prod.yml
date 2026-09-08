@@ -121,6 +121,9 @@ services:
       - OLLAMA_BASE_URL=http://ollama:11434
       - FRONTEND_URL=${PUBLIC_APP_URL:-http://localhost}
       - BACKEND_URL=${PUBLIC_APP_URL:-http://localhost}
+      # El backend habla con n8n por el nombre de servicio de la red del compose,
+      # no por localhost (que dentro del contenedor es su propio loopback).
+      - N8N_WEBHOOK_URL=http://n8n:5678/webhook/alerta-webhook
     volumes:
       - uploads:/app/uploads
       - storage:/app/storage
