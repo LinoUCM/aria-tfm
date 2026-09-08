@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { UserPlus, CheckCircle, XCircle, Loader2 } from "lucide-react";
 import toast from "react-hot-toast";
 import { useRouter } from "next/navigation";
-import { listUsers, createUser, updateUser } from "@/lib/api";
+import { listUsers, createUser, updateUser, errorMessage } from "@/lib/api";
 
 interface UserItem {
   id: string;
@@ -35,13 +35,14 @@ export default function UsersAdminPage() {
     try {
       const data = await listUsers();
       setUsers(data);
-    } catch (err: any) {
-      if (String(err.message).includes("403")) {
+    } catch (err) {
+      const msg = errorMessage(err, "Failed to load the user list");
+      if (msg.includes("403")) {
         toast.error("You don't have Administrator permissions to view this section");
         router.push("/chat");
         return;
       }
-      toast.error(err.message || "Failed to load the user list");
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
@@ -71,8 +72,8 @@ const handleCreateUser = async (e: React.FormEvent) => {
       setFullName("");
       setRole("VIEWER");
       fetchUsers();
-    } catch (err: any) {
-      toast.error(err.message);
+    } catch (err) {
+      toast.error(errorMessage(err));
     } finally {
       setCreating(false);
     }
@@ -83,8 +84,8 @@ const handleCreateUser = async (e: React.FormEvent) => {
       await updateUser(user.id, { is_active: !user.is_active });
       toast.success(`User ${user.is_active ? "deactivated" : "activated"}`);
       fetchUsers();
-    } catch (err: any) {
-      toast.error(err.message);
+    } catch (err) {
+      toast.error(errorMessage(err));
     }
   };
 
@@ -93,8 +94,8 @@ const handleCreateUser = async (e: React.FormEvent) => {
       await updateUser(userId, { role: newRole });
       toast.success("Role updated");
       fetchUsers();
-    } catch (err: any) {
-      toast.error(err.message);
+    } catch (err) {
+      toast.error(errorMessage(err));
     }
   };
 

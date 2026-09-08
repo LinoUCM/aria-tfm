@@ -4,14 +4,14 @@ import { useState, useEffect, useCallback } from "react";
 import { useDropzone } from "react-dropzone";
 import toast from "react-hot-toast";
 import {
-  Upload, Link, Trash2, RefreshCw, FileText, Globe,
+  Upload, Trash2, RefreshCw, FileText, Globe,
   CheckCircle, AlertCircle, Loader2, Database, Filter,
-  ChevronDown, X, Plus, Eye
+  X, Plus, Eye
 } from "lucide-react";
 import {
   listDocuments, uploadDocument, addDocumentURL,
   deleteDocument, reindexDocument, getKBStats,
-  fetchDocumentContent,
+  fetchDocumentContent, errorMessage,
   Document, KBStats
 } from "@/lib/api";
 import DocumentViewerModal from "@/components/DocumentViewerModal";
@@ -71,7 +71,9 @@ export default function AdminPage() {
   const [uploadCategory, setUploadCategory] = useState("auto");
   const [showURLForm, setShowURLForm] = useState(false);
   const [urlForm, setUrlForm] = useState({ url: "", title: "", category: "other", service_tag: "" });
-  const [uploadingIds, setUploadingIds] = useState<Set<string>>(new Set());
+  // Solo se usa el setter (para marcar/desmarcar subidas en curso); el valor
+  // en sí no se lee en ningún render, de ahí el binding vacío.
+  const [, setUploadingIds] = useState<Set<string>>(new Set());
   const [viewerDoc, setViewerDoc] = useState<{ title: string; content: string } | null>(null);
   const [viewerLoading, setViewerLoading] = useState(false);
   const [loadingDocId, setLoadingDocId] = useState<string | null>(null);
@@ -110,8 +112,8 @@ export default function AdminPage() {
         await uploadDocument(file, targetCategory);
         toast.success(`${file.name} queued for indexing (${targetCategory})`);
         await loadData();
-      } catch (err: any) {
-        toast.error(err.message || `Failed to upload ${file.name}`);
+      } catch (err) {
+        toast.error(errorMessage(err, `Failed to upload ${file.name}`));
       } finally {
         setUploadingIds((prev) => { const s = new Set(prev); s.delete(tempId); return s; });
       }
@@ -140,8 +142,8 @@ export default function AdminPage() {
       setShowURLForm(false);
       setUrlForm({ url: "", title: "", category: "other", service_tag: "" });
       await loadData();
-    } catch (err: any) {
-      toast.error(err.message || "Failed to add URL");
+    } catch (err) {
+      toast.error(errorMessage(err, "Failed to add URL"));
     }
   };
 
@@ -181,8 +183,8 @@ export default function AdminPage() {
       } else if (result.url) {
         window.open(result.url, "_blank");
       }
-    } catch (err: any) {
-      toast.error(err.message || "No se pudo abrir el documento");
+    } catch (err) {
+      toast.error(errorMessage(err, "No se pudo abrir el documento"));
     } finally {
       setViewerLoading(false);
       setLoadingDocId(null);

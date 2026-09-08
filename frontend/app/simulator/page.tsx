@@ -1,10 +1,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { getPresets, firePreset, fireCustomAlert, Preset } from "@/lib/api";
+import { getPresets, firePreset, fireCustomAlert, errorMessage, Preset, CustomAlertPayload } from "@/lib/api";
 import toast from "react-hot-toast";
 import { clsx } from "clsx";
-import { Zap, Play, AlertTriangle, Edit3, CheckCircle, Loader2 } from "lucide-react";
+import { Zap, Play, Edit3, CheckCircle, Loader2 } from "lucide-react";
 
 const PRIORITY_CONFIG = {
   P1: { color: "text-red-400", bg: "bg-red-900/20", border: "border-red-800", dot: "bg-red-400" },
@@ -51,8 +51,8 @@ export default function SimulatorPage() {
         { id: presetKey, title: presetTitle, incident_id: result.incident_id, time: new Date() },
         ...prev,
       ]);
-    } catch (err: any) {
-      toast.error(err.message || "Failed to fire alert");
+    } catch (err) {
+      toast.error(errorMessage(err, "Failed to fire alert"));
     } finally {
       setFiringId(null);
     }
@@ -61,18 +61,18 @@ export default function SimulatorPage() {
   const handleFireCustom = async () => {
     setFiringId("custom");
     try {
-      const payload = JSON.parse(customPayload);
+      const payload = JSON.parse(customPayload) as CustomAlertPayload;
       const result = await fireCustomAlert(payload);
       toast.success("Custom alert fired!");
       setFiredAlerts((prev) => [
         { id: "custom", title: payload.title, incident_id: result.incident_id, time: new Date() },
         ...prev,
       ]);
-    } catch (err: any) {
+    } catch (err) {
       if (err instanceof SyntaxError) {
         toast.error("Invalid JSON payload");
       } else {
-        toast.error(err.message || "Failed to fire alert");
+        toast.error(errorMessage(err, "Failed to fire alert"));
       }
     } finally {
       setFiringId(null);
@@ -88,7 +88,7 @@ export default function SimulatorPage() {
           Datadog Alert Simulator
         </h1>
         <p className="text-gray-400 text-sm mt-1">
-          Simulate Datadog webhook alerts to test ARIA's incident analysis pipeline
+          Simulate Datadog webhook alerts to test ARIA&apos;s incident analysis pipeline
         </p>
       </div>
 
@@ -116,7 +116,7 @@ export default function SimulatorPage() {
         ].map((tab) => (
           <button
             key={tab.key}
-            onClick={() => setActiveTab(tab.key as any)}
+            onClick={() => setActiveTab(tab.key as "presets" | "custom")}
             className={clsx(
               "px-4 py-2 rounded-md text-sm transition-colors",
               activeTab === tab.key

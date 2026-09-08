@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { executeRemediation } from '@/lib/api';
+import { executeRemediation, errorMessage } from '@/lib/api';
 
 interface RemediationProps {
   incidentId: string;
@@ -55,11 +55,11 @@ export const RemediationCard: React.FC<RemediationProps> = ({ incidentId, sugges
         setShowModal(false);
         onResolved();
       }, 1500);
-    } catch (err: any) {
+    } catch (err) {
       if (err instanceof TypeError) {
         setResultMessage("❌ Failed to connect to the backend.");
       } else {
-        setResultMessage(`❌ Error: ${err.message}`);
+        setResultMessage(`❌ Error: ${errorMessage(err)}`);
       }
     } finally {
       setLoading(false);

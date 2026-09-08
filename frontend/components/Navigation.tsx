@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import {
   MessageSquare,
   Database,
@@ -11,13 +11,21 @@ import {
   Shield,
   LogOut,
   ClipboardList,
+  type LucideIcon,
 } from "lucide-react";
 import { clsx } from "clsx";
 import { useState, useEffect } from "react";
 import { getCurrentUser, logoutUser } from "@/lib/auth";
 
+interface CurrentUser {
+  username: string;
+  role: string;
+  full_name?: string;
+  email?: string;
+}
+
 const navItems: {
-  href: string; label: string; icon: any; description: string; roles: string[] | null;
+  href: string; label: string; icon: LucideIcon; description: string; roles: string[] | null;
 }[] = [
   { href: "/chat", label: "Chat", icon: MessageSquare, description: "Talk to ARIA", roles: null },
   { href: "/admin", label: "Knowledge Base", icon: Database, description: "Manage documents", roles: ["ADMIN", "ON_CALL"] },
@@ -29,9 +37,8 @@ const navItems: {
 
 export default function Navigation() {
   const pathname = usePathname();
-  const router = useRouter();
 
-  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
 
   useEffect(() => {
     setCurrentUser(getCurrentUser());

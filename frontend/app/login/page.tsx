@@ -3,6 +3,7 @@
 import { useState, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { loginUser } from '@/lib/auth';
+import { errorMessage } from '@/lib/api';
 import { Eye, EyeOff, Lock, User, ShieldCheck, AlertCircle, Loader2 } from 'lucide-react';
 
 export default function LoginPage() {
@@ -22,8 +23,8 @@ export default function LoginPage() {
       await loginUser(username, password);
       router.push('/chat');
       router.refresh();
-    } catch (err: any) {
-      setError(err.message || 'Invalid credentials. Check your username and password.');
+    } catch (err) {
+      setError(errorMessage(err, 'Invalid credentials. Check your username and password.'));
     } finally {
       setLoading(false);
     }

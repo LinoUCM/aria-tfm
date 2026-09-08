@@ -2,8 +2,8 @@
 "use client";
 
 import { TopologyMap } from "@/components/TopologyMap";
-import { useState, useEffect, useRef } from "react";
-import { getIncidents, exportPostmortem, streamIncidentsFeed, streamIncidentAnalysis } from "@/lib/api";
+import { useState, useEffect } from "react";
+import { getIncidents, exportPostmortem, streamIncidentsFeed, streamIncidentAnalysis, errorMessage } from "@/lib/api";
 import { clsx } from "clsx";
 import { formatDistanceToNow } from "date-fns";
 import ReactMarkdown from "react-markdown";
@@ -26,7 +26,7 @@ interface Incident {
   host?: string;
   tags: string[];
   metrics: Record<string, number>;
-  analysis?: any;
+  analysis?: string;
   suggested_action?: string | null;
   has_postmortem?: boolean;
   postmortem_filename?: string | null; // <--- Añadir esta línea
@@ -72,9 +72,9 @@ function PostMortemButton({
       window.URL.revokeObjectURL(url);
 
       onPostmortemGenerated();
-    } catch (err: any) {
+    } catch (err) {
       console.error(err);
-      alert(err.message || "Failed to process the Post-Mortem");
+      alert(errorMessage(err, "Failed to process the Post-Mortem"));
     } finally {
       setLoading(false);
     }

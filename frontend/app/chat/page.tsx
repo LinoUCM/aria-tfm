@@ -3,9 +3,9 @@
 import { useState, useRef, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
-  sendMessage, streamChat, fetchConversation, listConversations,
+  sendMessage, fetchConversation, listConversations,
   listConversationCitations, fetchDocumentContent, openDocumentInNewTab,
-  ConversationSummary, ConversationDetail,
+  errorMessage, ConversationSummary, ConversationDetail,
 } from "@/lib/api";
 import { formatDistanceToNow } from "date-fns";
 import toast from "react-hot-toast";
@@ -174,8 +174,8 @@ function ChatPageInner() {
       } else {
         await openDocumentInNewTab(src.doc_id);
       }
-    } catch (err: any) {
-      toast.error(err.message || "Failed to open the document");
+    } catch (err) {
+      toast.error(errorMessage(err, "Failed to open the document"));
     } finally {
       setOpeningDoc(false);
     }
@@ -416,7 +416,7 @@ function ChatPageInner() {
       }
     };
 
-  } catch (err) {
+  } catch {
     toast.error("Failed to send message");
     setIsLoading(false);
     setActiveAgents([]);

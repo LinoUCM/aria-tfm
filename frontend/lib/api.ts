@@ -3,6 +3,16 @@ import { getAuthToken } from "./auth";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+/**
+ * Extrae un mensaje legible de un valor capturado en un `catch` (tipo `unknown`),
+ * sin recurrir a `any`. Reemplaza el viejo patrón `catch (err: any) => err.message`.
+ */
+export function errorMessage(err: unknown, fallback = "Unexpected error"): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "string") return err;
+  return fallback;
+}
+
 // Helper para adjuntar el Bearer Token a las cabeceras HTTP
 function getAuthHeaders(extraHeaders: Record<string, string> = {}): Record<string, string> {
   const token = getAuthToken();
@@ -51,7 +61,7 @@ export interface Incident {
   host?: string;
   tags: string[];
   metrics: Record<string, number>;
-  analysis?: Record<string, any>;
+  analysis?: string;               // texto markdown del análisis del incidente
   resolution?: string;
   resolution_time_minutes?: number;
   created_at: string;
@@ -327,7 +337,17 @@ export async function firePreset(
   return res.json();
 }
 
-export async function fireCustomAlert(payload: any): Promise<{
+export interface CustomAlertPayload {
+  title: string;
+  text: string;
+  alert_type: string;
+  priority: string;
+  host: string;
+  tags: string[];
+  metrics: Record<string, number>;
+}
+
+export async function fireCustomAlert(payload: CustomAlertPayload): Promise<{
   status: string;
   incident_id: string;
 }> {
@@ -406,11 +426,18 @@ export async function updateIncidentStatus(id: string, status: string): Promise<
   if (!res.ok) throw new Error("Error al actualizar el estado");
 }
 
+export interface RemediationResult {
+  status: string;
+  message: string;
+  incident_status?: string;
+  generated_runbook?: string;
+}
+
 export async function executeRemediation(
   incidentId: string,
   actionId: string,
-  parameters: Record<string, any>
-): Promise<any> {
+  parameters: Record<string, string>
+): Promise<RemediationResult> {
   const res = await fetch(`${API_URL}/incidents/${incidentId}/remediate`, {
     method: "POST",
     headers: getAuthHeaders({ "Content-Type": "application/json" }),
@@ -470,7 +497,8 @@ export async function createUser(payload: {
     const errorData = await res.json().catch(() => ({}));
     if (Array.isArray(errorData.detail)) {
       const msg = errorData.detail
-        .map((item: any) => `${item.loc[item.loc.length - 1]}: ${item.msg}`)
+        .map((item: { loc: (string | number)[]; msg: string }) =>
+          `${item.loc[item.loc.length - 1]}: ${item.msg}`)
         .join(" | ");
       throw new Error(msg);
     }

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Check, Loader2, X, Sparkles } from "lucide-react";
-import { resolveIncident } from "@/lib/api";
+import { resolveIncident, errorMessage } from "@/lib/api";
 import { getCurrentUser } from "@/lib/auth";
 
 interface ResolveIncidentModalProps {
@@ -41,8 +41,8 @@ export function ResolveIncidentModal({
       setNotes("");
       onSuccess(incidentId);
       onClose();
-    } catch (err: any) {
-      setError(err.message || "Error connecting to ARIA");
+    } catch (err) {
+      setError(errorMessage(err, "Error connecting to ARIA"));
     } finally {
       setLoading(false);
     }
@@ -74,7 +74,7 @@ export function ResolveIncidentModal({
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-xs font-medium text-gray-300 mb-1.5">
-              How did you resolve the problem? (Notes for ARIA's self-learning)
+              How did you resolve the problem? (Notes for ARIA&apos;s self-learning)
             </label>
             <textarea
               required
