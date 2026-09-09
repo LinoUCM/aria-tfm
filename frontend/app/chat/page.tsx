@@ -41,7 +41,8 @@ interface RagSource {
   source_url?: string;
   doc_id?: string;        // en vivo: del evento SSE (backend _rag_node). Histórico: document_id de /citations
   file_type?: string;     // solo histórico (/citations)
-  chunk_content?: string; // solo histórico (/citations) — el pasaje exacto que usó el LLM
+  chunk_content?: string; // el pasaje exacto que usó el LLM. En vivo: del evento SSE
+                          // rag_sources (campo `content`, mapeado abajo). Histórico: de /citations
   chunk_index?: number;   // solo histórico (/citations)
 }
 
@@ -356,7 +357,12 @@ function ChatPageInner() {
             break;
 
           case "rag_sources":
-            ragSourcesBuffer.current = data.data.sources;
+            // El backend (_rag_node) ahora incluye `content`: el pasaje exacto
+            // del chunk. Lo mapeamos a `chunk_content` para que la ficha de cita
+            // muestre el extracto también en el mensaje en vivo (sin reload).
+            ragSourcesBuffer.current = (data.data.sources as (RagSource & { content?: string })[]).map(
+              (s) => ({ ...s, chunk_content: s.chunk_content ?? s.content })
+            );
             break;
 
           case "web_results":

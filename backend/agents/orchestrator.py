@@ -752,6 +752,11 @@ Be concise. Max 150 words."""
                         "filename": r["filename"], "relevance_score": r["relevance_score"],
                         "category": r["category"], "page": r.get("page"), "source_url": r.get("source_url"),
                         "doc_id": r.get("doc_id"),
+                        # Pasaje exacto del chunk, ya disponible en memoria aquí (el
+                        # mismo `r["content"]` que _synthesis_node persiste en
+                        # RagReference). Permite que la ficha de cita muestre el
+                        # extracto en el mensaje en vivo, sin esperar a /citations.
+                        "content": r["content"],
                     })
                 await sse_manager.rag_sources(state["channel_id"], unique_sources)
             if similar and state.get("channel_id"):
