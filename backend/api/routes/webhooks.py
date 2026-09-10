@@ -1,4 +1,5 @@
 import asyncio
+import secrets
 import uuid
 import re
 from datetime import datetime, timezone
@@ -8,7 +9,7 @@ import structlog
 import os
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, BackgroundTasks, HTTPException, Response
+from fastapi import APIRouter, Depends, BackgroundTasks, Header, HTTPException, Response
 from fastapi.responses import StreamingResponse, FileResponse, Response
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -188,7 +189,22 @@ async def datadog_webhook(
     payload: DatadogWebhookPayload,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
+    x_webhook_secret: str = Header(default="", alias="X-Webhook-Secret"),
 ):
+    # Punto de entrada EXTERNO (lo llamaría un Datadog real u otro monitor):
+    # a diferencia de /simulator/*, aquí no hay sesión de usuario. Se protege
+    # con un secreto compartido en la cabecera X-Webhook-Secret. compare_digest
+    # en vez de == para no filtrar el secreto por timing. El 401 se lanza ANTES
+    # de crear el incidente: una cabecera mala no deja fila huérfana en BD.
+    expected = settings.datadog_webhook_secret or ""
+    if not x_webhook_secret or not secrets.compare_digest(
+        x_webhook_secret.encode("utf-8"), expected.encode("utf-8")
+    ):
+        raise HTTPException(
+            status_code=401,
+            detail="Missing or invalid X-Webhook-Secret header",
+        )
+
     incident = await _create_incident_from_payload(payload, db)
     payload_dict = payload.model_dump()
     background_tasks.add_task(_analyze_incident_async, str(incident.id), payload_dict)
