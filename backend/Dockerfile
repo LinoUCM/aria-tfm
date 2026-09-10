@@ -54,6 +54,10 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=5 \
     CMD curl -fsS http://localhost:8000/health || exit 1
 
-# 2 workers: razonable para 2 vCPUs dejando margen para Postgres/Ollama en la
-# misma VM. Sin --reload.
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
+# 1 worker: SSEManager y el rate limiter de Gemini (_wait_for_rate_limit,
+# GEMINI_RPM_LIMIT) son estado EN MEMORIA por proceso. Con >1 worker cada uno
+# tenía su propio SSEManager (el badge de Telegram en vivo solo llegaba si la
+# conexión SSE y el pipeline del incidente caían en el mismo worker, ~50%) y su
+# propio contador de rate limit (tope efectivo ~2x el pretendido). La carga es
+# I/O-bound (llamadas LLM con await), así que 1 worker basta. Sin --reload.
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
