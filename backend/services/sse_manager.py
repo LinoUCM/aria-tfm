@@ -1,6 +1,7 @@
 import asyncio
 import json
-from typing import AsyncGenerator, Dict, Set
+import time
+from typing import AsyncGenerator, Dict, List, Set
 from uuid import UUID
 import structlog
 
@@ -9,51 +10,110 @@ logger = structlog.get_logger()
 
 class SSEManager:
     """
-    Server-Sent Events manager.
-    Handles real-time streaming of agent events and tokens to connected clients.
+    Server-Sent Events manager — fan-out real.
+
+    Cada canal tiene un CONJUNTO de colas, una por suscriptor (una conexión
+    ``stream()`` = un ``EventSource`` del navegador). ``publish()`` copia el
+    evento a la cola de CADA suscriptor, así que N clientes en el mismo canal
+    reciben todos los eventos (broadcast), no se los reparten.
+
+    Antes había una única cola compartida por canal: ``queue.get()`` es
+    consumidor (un evento -> un solo cliente) y, al desconectar cualquiera,
+    ``del self._queues[channel]`` dejaba huérfanas las conexiones que seguían
+    vivas. Eso rompía el canal broadcast ``incidents_feed`` (badge de Telegram
+    sin refresco en vivo). Los canales 1:1 (tokens de chat ``/chat/stream/<id>``,
+    análisis de incidente ``/incidents/stream/<id>``) siguen funcionando igual:
+    son simplemente un conjunto de tamaño 1.
+
+    Buffer previo a la suscripción: ``_process_chat`` / ``_analyze_incident_async``
+    empiezan a emitir en cuanto arranca la tarea de fondo, a veces antes de que
+    el navegador abra el ``EventSource``. Si en ese instante no hay suscriptores,
+    el evento se guarda en ``_pending`` y se entrega al PRIMER suscriptor que
+    llegue (con TTL: un canal con eventos y sin nadie escuchando se descarta a
+    los ``_PENDING_TTL`` s, para no acumular basura).
     """
 
-    def __init__(self):
-        self._queues: Dict[str, asyncio.Queue] = {}
+    _MAXSIZE = 100          # eventos en cola por suscriptor
+    _PENDING_TTL = 30.0     # s que se conserva un buffer sin suscriptor
 
-    def get_or_create_queue(self, channel_id: str) -> asyncio.Queue:
-        if channel_id not in self._queues:
-            self._queues[channel_id] = asyncio.Queue(maxsize=100)
-        return self._queues[channel_id]
+    def __init__(self):
+        self._subscribers: Dict[str, Set[asyncio.Queue]] = {}
+        self._pending: Dict[str, List[str]] = {}
+        self._pending_ts: Dict[str, float] = {}
+
+    # ─── internos ───────────────────────────────────────────────────────────
+
+    def _offer(self, queue: asyncio.Queue, payload: str, channel_id: str) -> None:
+        """Encola sin bloquear. Si la cola de ESE suscriptor está llena
+        (cliente colgado o muy lento), se descarta el evento SOLO para él —
+        nunca frena al emisor ni afecta a los demás suscriptores."""
+        try:
+            queue.put_nowait(payload)
+        except asyncio.QueueFull:
+            logger.warning("sse_slow_consumer_dropped", channel_id=channel_id)
+
+    def _gc_pending(self) -> None:
+        now = time.monotonic()
+        for cid, ts in list(self._pending_ts.items()):
+            if now - ts > self._PENDING_TTL:
+                self._pending.pop(cid, None)
+                self._pending_ts.pop(cid, None)
+
+    # ─── API ────────────────────────────────────────────────────────────────
 
     async def publish(self, channel_id: str, event: str, data: dict) -> None:
-        """Publish an event to a channel."""
-        queue = self.get_or_create_queue(channel_id)
+        """Publica un evento a TODOS los suscriptores del canal."""
         payload = json.dumps({"event": event, "data": data})
-        try:
-            await queue.put(payload)
-        except asyncio.QueueFull:
-            logger.warning("sse_queue_full", channel_id=channel_id)
+        subs = self._subscribers.get(channel_id)
+        if subs:
+            for queue in list(subs):
+                self._offer(queue, payload, channel_id)
+            return
+        # Nadie escuchando aún: bufferizamos para el primer suscriptor.
+        self._gc_pending()
+        buf = self._pending.setdefault(channel_id, [])
+        buf.append(payload)
+        if len(buf) > self._MAXSIZE:
+            del buf[0]
+        self._pending_ts[channel_id] = time.monotonic()
 
     async def stream(self, channel_id: str) -> AsyncGenerator[str, None]:
-        """Stream events for a channel as SSE format."""
-        queue = self.get_or_create_queue(channel_id)
+        """Stream SSE para un suscriptor. Su cola es propia; al terminar
+        (desconexión o evento done/error) se limpia SOLO esa cola."""
+        queue: asyncio.Queue = asyncio.Queue(maxsize=self._MAXSIZE)
+        subs = self._subscribers.setdefault(channel_id, set())
+        is_first = len(subs) == 0
+        subs.add(queue)
+
+        # El primer suscriptor recibe lo que se hubiera publicado antes de
+        # que existiera ningún oyente.
+        if is_first:
+            for payload in self._pending.pop(channel_id, []):
+                self._offer(queue, payload, channel_id)
+            self._pending_ts.pop(channel_id, None)
+
         try:
             while True:
                 try:
                     payload = await asyncio.wait_for(queue.get(), timeout=30.0)
                     yield f"data: {payload}\n\n"
 
-                    # Check if stream is done
                     data = json.loads(payload)
-                    if data.get("event") in ["done", "error"]:
+                    if data.get("event") in ("done", "error"):
                         break
 
                 except asyncio.TimeoutError:
-                    # Send keepalive ping
                     yield f"data: {json.dumps({'event': 'ping', 'data': {}})}\n\n"
-
         finally:
-            self._cleanup_queue(channel_id)
+            self._unsubscribe(channel_id, queue)
 
-    def _cleanup_queue(self, channel_id: str) -> None:
-        if channel_id in self._queues:
-            del self._queues[channel_id]
+    def _unsubscribe(self, channel_id: str, queue: asyncio.Queue) -> None:
+        subs = self._subscribers.get(channel_id)
+        if subs is None:
+            return
+        subs.discard(queue)
+        if not subs:
+            del self._subscribers[channel_id]
 
     # ─── Convenience Methods for Agent Events ────────────────────────────────
 
