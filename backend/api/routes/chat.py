@@ -182,15 +182,17 @@ async def _process_chat(channel_id: str, conversation_id: UUID, request: ChatReq
     """Background task: runs the agent orchestrator, streams results, and
     persists the exchange in its own DB session."""
     final_response = ""
+    turn_kind = "normal"
     try:
         from agents.orchestrator import orchestrator
-        final_response = await orchestrator.run(
+        final_response, meta = await orchestrator.run(
             channel_id=channel_id,
             conversation_id=conversation_id,
             message=request.message,
             image_base64=request.image_base64,
             audio_base64=request.audio_base64,
         )
+        turn_kind = (meta or {}).get("turn_kind", "normal")
     except Exception as e:
         logger.error("chat_processing_error", channel_id=channel_id, error=str(e))
         await sse_manager.error(channel_id, str(e))
@@ -206,17 +208,28 @@ async def _process_chat(channel_id: str, conversation_id: UUID, request: ChatReq
             if conversation:
                 # Reasignar la lista completa (no usar .append() in-place):
                 # SQLAlchemy no detecta mutaciones in-place de columnas JSON.
+                #
+                # `kind` (Hallazgo A): los turnos de identidad / fuera de dominio /
+                # saludo se marcan para que _load_conversation_history NO los meta
+                # en la ventana de memoria (gastaban hueco sin aportar continuidad
+                # y expulsaban los turnos técnicos reales). Los turnos "normal" NO
+                # llevan la clave -> compatibilidad con filas antiguas.
                 messages = list(conversation.messages or [])
-                messages.append({
+                user_msg = {
                     "role": "user",
                     "content": request.message,
                     "timestamp": datetime.utcnow().isoformat(),
-                })
-                messages.append({
+                }
+                assistant_msg = {
                     "role": "assistant",
                     "content": final_response,
                     "timestamp": datetime.utcnow().isoformat(),
-                })
+                }
+                if turn_kind in ("identity", "out_of_domain", "chitchat"):
+                    user_msg["kind"] = turn_kind
+                    assistant_msg["kind"] = turn_kind
+                messages.append(user_msg)
+                messages.append(assistant_msg)
                 conversation.messages = messages
                 conversation.updated_at = datetime.utcnow()
                 if not conversation.title and request.message:

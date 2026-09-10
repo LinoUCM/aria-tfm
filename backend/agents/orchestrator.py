@@ -115,6 +115,43 @@ SAFE_IDENTITY_RESPONSE = (
     "técnica puedo ayudarte?"
 )
 
+# Un mensaje "deíctico": referencia algo dicho antes ("eso", "esto", "lo de
+# antes", "el mismo problema", "that", "again"...). Junto con "mensaje corto" es
+# la señal de que la query de RAG/búsqueda necesita el contexto del turno
+# sustancial anterior para no depender de la frase suelta.
+_DEICTIC_RE = re.compile(
+    r"\b(eso|esto|esa|ese|esas|esos|aquello|aquella|"
+    r"lo\s+mismo|lo\s+de\s+antes|lo\s+anterior|el\s+mismo|la\s+misma|"
+    r"esto\s+se\s+repit\w*|se\s+repit\w*|volver\s+a\s+pasar|de\s+nuevo|otra\s+vez|"
+    r"volviendo\s+a\s+lo|retom\w+|"
+    r"that|this|it|the\s+same|again|earlier|previously|previous\s+one)\b",
+    re.IGNORECASE,
+)
+
+# Palabras genéricas (es+en) que NO sirven para decidir si un resultado de
+# búsqueda web es relevante a una pregunta técnica: verbos de acción, muletillas,
+# y términos hiper-comunes de TI. Lo que queda tras filtrarlas (nombres de
+# producto, servicios, tecnologías) es lo "distintivo" contra lo que se filtran
+# los resultados de Tavily.
+_WEB_FILTER_STOPWORDS = {
+    # función es
+    "como", "cómo", "qué", "que", "por", "para", "con", "sin", "los", "las",
+    "una", "unos", "unas", "del", "este", "esta", "esto", "eso", "esas", "esos",
+    "cuando", "donde", "porque", "pasa", "pasan", "hace", "hacer", "puedo",
+    "ahora", "mismo", "antes", "futuro", "evito", "evitar", "soluciono",
+    "solucionar", "arreglar", "compruebo", "comprobar", "reviso", "revisar",
+    "vale", "bien", "sobre", "acerca", "tengo", "sospecho", "creo",
+    # función en
+    "how", "what", "why", "when", "where", "the", "and", "for", "with", "without",
+    "this", "that", "does", "can", "should", "fix", "check", "avoid", "prevent",
+    "solve", "right", "now", "again", "issue", "issues",
+    # TI hiper-genérico
+    "error", "errores", "problema", "problemas", "sistema", "system", "server",
+    "servidor", "cache", "caché", "corrupt", "corrupta", "corrupto", "corrupted",
+    "comando", "command", "log", "logs", "operations", "operation", "sre",
+    "infra", "infrastructure", "infraestructura", "troubleshooting",
+}
+
 
 def identity_violation(text: str) -> Optional[str]:
     """Devuelve el patrón (repr) que ha disparado, o None si el texto no
@@ -338,9 +375,23 @@ Then, if it fits, offer to help with an Operations or SRE question."""
     #  - Solo se LEE messages; nunca se escribe antes de que _process_chat
     #    persista, así que _persist_rag_references / message_index no cambian.
     #  - Conversación nueva (messages == []) -> historial vacío -> cero cambio.
-    HISTORY_MAX_TURNS = 6      # 3 pares usuario/asistente
-    HISTORY_MSG_MAXLEN = 800   # trunca cada mensaje para acotar el prompt
+    HISTORY_MAX_TURNS = 8      # nº de mensajes SUSTANCIALES que entran en la ventana
+                              # (4 pares). Antes 6; se sube un poco porque ahora
+                              # los incisos NO cuentan, así caben ~4 intercambios
+                              # técnicos reales aunque haya digresiones de por medio.
+    HISTORY_MSG_MAXLEN = 800   # trunca cada mensaje para acotar el prompt (8*800≈6KB)
     HISTORY_CLASSIFY_MAXLEN = 300  # recorte más agresivo para _classify_domain
+    # Hallazgo A: la ventana era los últimos N mensajes CRUDOS, así que los
+    # incisos (pregunta de identidad, pregunta fuera de dominio, saludo) gastaban
+    # hueco sin aportar continuidad y expulsaban los turnos técnicos reales. Ahora
+    # se descartan de la ventana los turnos marcados con `kind` en este conjunto;
+    # se retrocede como mucho HISTORY_SCAN_LIMIT mensajes buscando sustanciales.
+    HISTORY_SKIP_KINDS = {"identity", "out_of_domain", "chitchat"}
+    HISTORY_SCAN_LIMIT = 40
+    # Hallazgo B: si el mensaje actual es corto o deíctico, se antepone el último
+    # turno de usuario SUSTANCIAL a la query de RAG y de búsqueda web.
+    QUERY_CONTEXT_MAX_WORDS = 10
+    QUERY_CONTEXT_PREFIX_MAXLEN = 220
 
     def __init__(self):
         self.gemini = genai.Client(api_key=settings.google_api_key)
@@ -766,18 +817,14 @@ Be concise. Max 150 words."""
                 query_parts.append(state["transcribed_text"])
             if state.get("vision_analysis"):
                 query_parts.append(state["vision_analysis"])
-            # MEJORA multi-turno: un follow-up corto ("¿por qué pasan esas
-            # conexiones?") no da suficiente señal para recuperar. Si el mensaje
-            # es muy corto y hay historial, se antepone el último turno de
-            # usuario a la query. No cambia el umbral del 70% ni has_kb: solo
-            # mejora QUÉ se busca. Mensajes normales (>8 palabras) sin cambio.
-            hist = state.get("conversation_history") or []
-            if hist and len((state.get("transcribed_text") or state["original_message"]).split()) <= 8:
-                last_user = next(
-                    (m["content"] for m in reversed(hist) if m.get("role") == "user"), ""
-                )
-                if last_user:
-                    query_parts.insert(0, last_user[:300])
+            # MEJORA multi-turno (Hallazgo A/B): un follow-up corto o deíctico
+            # ("¿por qué pasan esas conexiones?", "¿cómo evito que esto se
+            # repita?") no da señal para recuperar. Se antepone el último turno
+            # de usuario SUSTANCIAL. No cambia el umbral del 70% ni has_kb: solo
+            # mejora QUÉ se busca. Mensajes largos y no deícticos: sin cambio.
+            ctx_prefix = self._history_query_prefix(state)
+            if ctx_prefix:
+                query_parts.insert(0, ctx_prefix)
             query = " ".join(query_parts)
             n_results = state.get("rag_chunks", 3)
             results = get_indexing_service().search(query=query, n_results=n_results)
@@ -832,24 +879,26 @@ Be concise. Max 150 words."""
         try:
             from tavily import TavilyClient
             client = TavilyClient(api_key=settings.tavily_api_key)
-            query = state.get("transcribed_text") or state["original_message"]
-            # MEJORA multi-turno: mismo criterio que _rag_node — si el follow-up
-            # es muy corto, se le antepone el último turno de usuario para que la
-            # búsqueda web no dependa de la frase suelta.
-            hist = state.get("conversation_history") or []
-            if hist and len(query.split()) <= 8:
-                last_user = next(
-                    (m["content"] for m in reversed(hist) if m.get("role") == "user"), ""
-                )
-                if last_user:
-                    query = f"{last_user[:250]} {query}"
-            prefix = "SRE operations "
-            truncated = query[:400 - len(prefix)].strip()
-            response = client.search(query=f"{prefix}{truncated}", search_depth="basic", max_results=3)
+            current = state.get("transcribed_text") or state["original_message"]
+            # Hallazgo B — query con CONTEXTO técnico real, no la frase suelta:
+            #  - anteponemos el último turno de usuario sustancial si el mensaje
+            #    es corto/deíctico (mismo helper que _rag_node),
+            #  - hint de dominio al FINAL (funciona mejor que un prefijo en otro
+            #    idioma; antes iba "SRE operations " literal delante de una frase
+            #    en español),
+            #  - search_depth="advanced" (más preciso que "basic").
+            ctx_prefix = self._history_query_prefix(state)
+            core_query = f"{ctx_prefix} {current}".strip() if ctx_prefix else current
+            query = f"{core_query[:340]}  (IT operations / SRE / infrastructure)"
+            response = client.search(query=query, search_depth="advanced", max_results=4)
             # Tavily es una API externa: no asumimos que cada resultado traiga
             # siempre title/url/content — usamos .get() con fallback para que un
             # resultado malformado no tire abajo el nodo entero por un KeyError.
             web_items = response.get("results", [])
+            # Hallazgo B — filtro de sanidad: descarta resultados que no comparten
+            # ningún token distintivo con la query real (evita fuentes de salud
+            # mental / entretenimiento / navegador en una respuesta técnica).
+            web_items = self._filter_web_results(web_items, core_query)[:3]
             state["web_results"] = "\n\n".join([
                 f"**{r.get('title', 'Untitled')}** ({r.get('url', '')})\n{r.get('content', '')}"
                 for r in web_items
@@ -1179,13 +1228,20 @@ Be concise. Max 150 words."""
             logger.error("rag_references_persist_failed", error=str(e))
 
     async def _load_conversation_history(self, conversation_id) -> List[dict]:
-        """Lee los últimos ``HISTORY_MAX_TURNS`` mensajes de
-        ``Conversation.messages`` y los devuelve como ``[{role, content}]`` con
-        cada ``content`` truncado a ``HISTORY_MSG_MAXLEN``.
+        """Devuelve los últimos ``HISTORY_MAX_TURNS`` mensajes SUSTANCIALES de
+        ``Conversation.messages`` como ``[{role, content}]``, cada ``content``
+        truncado a ``HISTORY_MSG_MAXLEN``.
 
-        Solo LECTURA. Best-effort: cualquier fallo => lista vacía (comportamiento
-        idéntico al de una conversación nueva). No modifica nada, así que
-        _persist_rag_references / message_index quedan intactos.
+        "Sustancial" = NO marcado con ``kind`` en ``HISTORY_SKIP_KINDS`` (turnos
+        de identidad / fuera de dominio / saludo). Se retrocede como mucho
+        ``HISTORY_SCAN_LIMIT`` mensajes. Los mensajes antiguos sin clave ``kind``
+        (persistidos antes de este cambio, o cualquier turno "normal") cuentan
+        como sustanciales — criterio conservador.
+
+        Solo LECTURA. Best-effort: cualquier fallo => lista vacía (idéntico a una
+        conversación nueva). No modifica nada, así que _persist_rag_references /
+        message_index quedan intactos. analyze_incident() usa una Conversation
+        sintética que NUNCA acumula mensajes -> aquí siempre devuelve [].
         """
         if not conversation_id:
             return []
@@ -1205,23 +1261,96 @@ Be concise. Max 150 words."""
                 )).first()
 
             msgs = (row[0] if row else None) or []
-            out: List[dict] = []
-            for m in msgs[-self.HISTORY_MAX_TURNS:]:
+            picked: List[dict] = []
+            for m in reversed(msgs[-self.HISTORY_SCAN_LIMIT:]):
+                if m.get("kind") in self.HISTORY_SKIP_KINDS:
+                    continue
                 role = m.get("role")
                 content = (m.get("content") or "").strip()
                 if role not in ("user", "assistant") or not content:
                     continue
                 if len(content) > self.HISTORY_MSG_MAXLEN:
                     content = content[: self.HISTORY_MSG_MAXLEN] + " […truncated]"
-                out.append({"role": role, "content": content})
-            return out
+                picked.append({"role": role, "content": content})
+                if len(picked) >= self.HISTORY_MAX_TURNS:
+                    break
+            picked.reverse()
+            return picked
         except Exception as e:
             logger.warning("conversation_history_load_failed", error=str(e))
             return []
 
+    def _history_query_prefix(self, state: "AgentState") -> str:
+        """Hallazgo A/B: si el mensaje actual es corto o deíctico, devuelve
+        contexto del historial para anteponerlo a la query de RAG / búsqueda:
+        el PRIMER turno de usuario sustancial (el planteamiento real del
+        problema) + el ÚLTIMO (el contexto inmediato). Así una cadena de
+        follow-ups cortos ("¿y eso por qué pasa?" -> "¿y cómo lo soluciono?")
+        no pierde de vista de qué va la conversación. Si no procede, "".
+        """
+        current = (state.get("transcribed_text") or state.get("original_message") or "").strip()
+        hist = state.get("conversation_history") or []
+        if not hist or not current:
+            return ""
+        short = len(current.split()) <= self.QUERY_CONTEXT_MAX_WORDS
+        if not (short or _DEICTIC_RE.search(current)):
+            return ""
+        user_turns = [m["content"] for m in hist if m.get("role") == "user" and m.get("content")]
+        if not user_turns:
+            return ""
+        n = self.QUERY_CONTEXT_PREFIX_MAXLEN
+        if len(user_turns) == 1:
+            return user_turns[0][:n].strip()
+        return f"{user_turns[0][:n]} … {user_turns[-1][:n]}".strip()
+
+    @staticmethod
+    def _distinctive_tokens(text: str) -> set:
+        """Tokens 'con carga' de una query: alfanum de >=4 chars, en minúsculas,
+        menos las genéricas de _WEB_FILTER_STOPWORDS. Un token con dígito (p. ej.
+        '502', 'cd47a265', 'gpt-4') o con guion siempre cuenta."""
+        toks = set()
+        for raw in re.findall(r"[a-záéíóúñü0-9][\wáéíóúñü.\-/]{2,}", (text or "").lower()):
+            t = raw.strip(".-/")
+            if not t:
+                continue
+            if any(c.isdigit() for c in t) or "-" in t:
+                toks.add(t)
+            elif len(t) >= 4 and t not in _WEB_FILTER_STOPWORDS:
+                toks.add(t)
+        return toks
+
+    def _filter_web_results(self, items: list, query: str) -> list:
+        """Hallazgo B: descarta resultados de Tavily que no comparten NINGÚN
+        token distintivo con la query real. Evita que un resultado de salud
+        mental / entretenimiento / navegador aparezca como 'fuente' de una
+        respuesta técnica. Si la query no tiene tokens distintivos (demasiado
+        genérica) NO se filtra nada; si el filtro deja la lista vacía, se
+        devuelve [] (mejor sin bloque 'Web sources' que con basura)."""
+        distinctive = self._distinctive_tokens(query)
+        if not distinctive:
+            return items
+        kept = []
+        for r in items:
+            blob = f"{r.get('title', '')} {r.get('content', '')}".lower()
+            if any(tok in blob for tok in distinctive):
+                kept.append(r)
+        if len(kept) != len(items):
+            logger.info("web_results_filtered",
+                        kept=len(kept), dropped=len(items) - len(kept),
+                        distinctive=sorted(distinctive)[:8])
+        return kept
+
     # ─── Public Interface ──────────────────────────────────────────────────────
 
     async def run(self, channel_id, conversation_id, message, image_base64=None, audio_base64=None):
+        """Devuelve ``(final_response, meta)``.
+
+        ``meta["turn_kind"]`` ∈ {"identity", "out_of_domain", "chitchat",
+        "normal"} — lo usa _process_chat para MARCAR el mensaje persistido, de
+        forma que _load_conversation_history pueda excluir los incisos de la
+        ventana de memoria (Hallazgo A). El valor sale del estado del grafo
+        (flags que el router ya calcula), no de heurística sobre el texto.
+        """
         conversation_history = await self._load_conversation_history(conversation_id)
         initial_state = AgentState(
             channel_id=channel_id, conversation_id=str(conversation_id),
@@ -1236,7 +1365,16 @@ Be concise. Max 150 words."""
             final_response=None, error=None,
         )
         final_state = await self.graph.ainvoke(initial_state)
-        return final_state.get("final_response", "")
+
+        if final_state.get("is_identity_query"):
+            turn_kind = "identity"
+        elif final_state.get("out_of_domain"):
+            turn_kind = "out_of_domain"
+        elif final_state.get("skip_rag") and self._is_conversational(message or ""):
+            turn_kind = "chitchat"
+        else:
+            turn_kind = "normal"
+        return final_state.get("final_response", ""), {"turn_kind": turn_kind}
     
     # ─── Analyze Incident ──────────────────────────────────────────────────────
 
@@ -1346,8 +1484,11 @@ literal value null. Do not force a match.
             logger.error("incident_conversation_get_or_create_failed",
                          incident_id=incident_id, error=str(e))
 
-        # Ejecutamos el flujo multinodo completo de ARIA (RAG + memoria de incidentes)
-        full_response = await self.run(
+        # Ejecutamos el flujo multinodo completo de ARIA (RAG + memoria de incidentes).
+        # run() ahora devuelve (respuesta, meta); analyze_incident ignora meta (su
+        # Conversation sintética nunca acumula mensajes, así que turn_kind aquí es
+        # irrelevante y conversation_history siempre es []).
+        full_response, _ = await self.run(
             channel_id=channel_id,
             conversation_id=conversation_id,
             message=message
