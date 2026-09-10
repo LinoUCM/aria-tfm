@@ -125,7 +125,10 @@ services:
       # no por localhost (que dentro del contenedor es su propio loopback).
       - N8N_WEBHOOK_URL=http://n8n:5678/webhook/alerta-webhook
       # Secreto compartido del webhook externo de Datadog (POST /api/webhook/datadog).
-      - DATADOG_WEBHOOK_SECRET=aria_webhook_secret_2024
+      # El valor real vive SOLO en ./.env (no versionado), igual que
+      # POSTGRES_PASSWORD y N8N_ENCRYPTION_KEY. Si no está definido, compose
+      # inyecta cadena vacía y el backend rechaza todos los webhooks con 401.
+      - DATADOG_WEBHOOK_SECRET=${DATADOG_WEBHOOK_SECRET}
     volumes:
       - uploads:/app/uploads
       - storage:/app/storage
