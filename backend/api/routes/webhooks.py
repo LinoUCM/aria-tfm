@@ -84,6 +84,31 @@ async def _record_notification_status(incident_id: str, status: str) -> None:
             # TIMESTAMP WITHOUT TIME ZONE y asyncpg rechaza mezclar naive/aware.
             inc.notification_sent_at = datetime.utcnow()
             await db.commit()
+
+            # SSE para que el badge de la UI se actualice en vivo, sin recargar
+            # (mismo shape y motivo que _analyze_incident_async /
+            # _create_incident_from_payload). Best-effort: dentro del try, si
+            # falla no revierte el commit ya confirmado.
+            sev_val = inc.severity.value if hasattr(inc.severity, "value") else str(inc.severity)
+            stat_val = inc.status.value if hasattr(inc.status, "value") else str(inc.status)
+            await sse_manager.incident_update("incidents_feed", {
+                "id": str(inc.id),
+                "title": inc.title,
+                "description": inc.description,
+                "severity": sev_val.upper(),
+                "status": stat_val.upper(),
+                "service_affected": inc.service_affected,
+                "host": inc.host,
+                "tags": inc.tags or [],
+                "metrics": inc.metrics or {},
+                "analysis": inc.analysis,
+                "created_at": f"{inc.created_at.isoformat()}Z" if inc.created_at else None,
+                "notification_status": inc.notification_status,
+                "notification_sent_at": (
+                    f"{inc.notification_sent_at.isoformat()}Z"
+                    if inc.notification_sent_at else None
+                ),
+            })
     except Exception as e:
         logger.error("n8n_status_persist_failed", incident_id=incident_id, error=str(e))
 
