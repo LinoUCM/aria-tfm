@@ -30,6 +30,8 @@ interface Incident {
   suggested_action?: string | null;
   has_postmortem?: boolean;
   postmortem_filename?: string | null; // <--- Añadir esta línea
+  notification_status?: "sent" | "failed" | null; // envío alerta Telegram/n8n; null = no intentado
+  notification_sent_at?: string | null;
   created_at: string;
 }
 
@@ -403,6 +405,7 @@ export default function IncidentsPage() {
                     />
 
                     <StatusBadge status={incident.status} />
+                    <NotificationBadge status={incident.notification_status} />
                     <button onClick={() => handleExpand(incident)} className="p-1 hover:text-white text-gray-500 transition">
                       {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                     </button>
@@ -519,5 +522,17 @@ function StatusBadge({ status }: { status: string }) {
     color = "text-green-400 bg-green-900/30 border border-green-800/50";
   }
 
+  return <span className={clsx("text-xs px-2.5 py-1 rounded-full font-medium", color)}>{label}</span>;
+}
+
+// Estado del envío de la alerta a Telegram/n8n (persistido en el incidente).
+// Mismo patrón visual que StatusBadge. Sin badge si nunca se intentó (null).
+function NotificationBadge({ status }: { status?: "sent" | "failed" | null }) {
+  if (status !== "sent" && status !== "failed") return null;
+  const sent = status === "sent";
+  const label = sent ? "🔔 Telegram: ✅ Enviada" : "🔔 Telegram: ❌ Error de envío";
+  const color = sent
+    ? "text-green-400 bg-green-900/30 border border-green-800/50"
+    : "text-red-400 bg-red-900/30 border border-red-800/50";
   return <span className={clsx("text-xs px-2.5 py-1 rounded-full font-medium", color)}>{label}</span>;
 }

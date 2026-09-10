@@ -62,8 +62,35 @@ def sanitize_md_for_pdf(text: str) -> str:
 
 # ─── Helper de Notificación a n8n ────────────────────────────────────────────
 
+async def _record_notification_status(incident_id: str, status: str) -> None:
+    """Persiste el resultado del envío a n8n en la fila Incident.
+
+    Corre desde un background task, así que abre su propia sesión async (mismo
+    patrón que _analyze_incident_async / _persist_rag_references). Best-effort:
+    cualquier fallo se registra y se traga, nunca rompe el envío de la alerta.
+    """
+    try:
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(
+                select(Incident).where(Incident.id == uuid.UUID(incident_id))
+            )
+            inc = result.scalar_one_or_none()
+            if inc is None:
+                logger.warning("n8n_status_incident_not_found", incident_id=incident_id)
+                return
+            inc.notification_status = status
+            # Naive UTC, igual que el resto de columnas datetime del modelo
+            # (created_at/updated_at usan datetime.utcnow); la columna es
+            # TIMESTAMP WITHOUT TIME ZONE y asyncpg rechaza mezclar naive/aware.
+            inc.notification_sent_at = datetime.utcnow()
+            await db.commit()
+    except Exception as e:
+        logger.error("n8n_status_persist_failed", incident_id=incident_id, error=str(e))
+
+
 async def _send_n8n_notification(incident_id: str, payload_dict: dict):
     if not settings.N8N_WEBHOOK_URL:
+        # Nunca se intentó el envío: se deja notification_status en null.
         logger.warning("n8n_webhook_url_missing")
         return
 
@@ -75,12 +102,19 @@ async def _send_n8n_notification(incident_id: str, payload_dict: dict):
         "raw_payload": payload_dict,
     }
 
+    status = "failed"
     async with httpx.AsyncClient() as client:
         try:
             res = await client.post(settings.N8N_WEBHOOK_URL, json=n8n_payload, timeout=5.0)
-            logger.info("n8n_webhook_sent", status_code=res.status_code)
+            if res.is_success:  # 2xx
+                status = "sent"
+                logger.info("n8n_webhook_sent", status_code=res.status_code)
+            else:
+                logger.error("n8n_webhook_failed", status_code=res.status_code)
         except Exception as e:
             logger.error("n8n_webhook_failed", error=str(e))
+
+    await _record_notification_status(incident_id, status)
 
 
 # ─── Incidents REST API ──────────────────────────────────────────────────────
@@ -111,6 +145,11 @@ async def get_incidents(
             "analysis": getattr(inc, "analysis", None),
             "suggested_action": getattr(inc, "suggested_action", None),
             "postmortem_filename": getattr(inc, "postmortem_filename", None),
+            "notification_status": getattr(inc, "notification_status", None),
+            "notification_sent_at": (
+                f"{inc.notification_sent_at.isoformat()}Z"
+                if getattr(inc, "notification_sent_at", None) else None
+            ),
             "created_at": f"{inc.created_at.isoformat()}Z" if inc.created_at else None,
         }
         for inc in incidents

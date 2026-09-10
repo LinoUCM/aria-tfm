@@ -45,6 +45,10 @@ _LIGHTWEIGHT_MIGRATIONS = [
     # message_index: añadida para agrupar las citas RAG por mensaje del asistente
     # al recargar una conversación (ver RagReference.message_index).
     "ALTER TABLE rag_references ADD COLUMN IF NOT EXISTS message_index INTEGER",
+    # notification_status / notification_sent_at: resultado persistido del envío
+    # de la alerta a n8n/Telegram (ver Incident y _send_n8n_notification).
+    "ALTER TABLE incidents ADD COLUMN IF NOT EXISTS notification_status VARCHAR(10)",
+    "ALTER TABLE incidents ADD COLUMN IF NOT EXISTS notification_sent_at TIMESTAMP",
 ]
 
 

@@ -140,6 +140,11 @@ class Incident(Base):
     resolved_at = Column(DateTime)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     postmortem_filename = Column(String, nullable=True) # Guardará el nombre del archivo PDF/MD
+    # Resultado real del envío de la alerta a n8n/Telegram (_send_n8n_notification).
+    # "sent" (respuesta 2xx) / "failed" (excepción o no-2xx) / null si nunca se
+    # intentó o N8N_WEBHOOK_URL no está configurado.
+    notification_status = Column(String(10), nullable=True)
+    notification_sent_at = Column(DateTime, nullable=True)
 
     # Relations
     conversations = relationship("Conversation", back_populates="incident")
