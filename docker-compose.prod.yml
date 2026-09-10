@@ -124,6 +124,8 @@ services:
       # El backend habla con n8n por el nombre de servicio de la red del compose,
       # no por localhost (que dentro del contenedor es su propio loopback).
       - N8N_WEBHOOK_URL=http://n8n:5678/webhook/alerta-webhook
+      # Secreto compartido del webhook externo de Datadog (POST /api/webhook/datadog).
+      - DATADOG_WEBHOOK_SECRET=aria_webhook_secret_2024
     volumes:
       - uploads:/app/uploads
       - storage:/app/storage
