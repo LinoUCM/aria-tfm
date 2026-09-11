@@ -4,12 +4,12 @@
 # {$DOMAIN}  →  dirección del sitio, inyectada por docker-compose.prod.yml.
 #   - Sin dominio todavía  → DOMAIN=:80  → HTTP plano en el puerto 80, sin TLS
 #                            (modo INTERINO, documentado como temporal en DEPLOY.md).
-#   - Con dominio (p. ej. aria.midominio.me) → Caddy provisiona automáticamente
+#   - Con dominio (p. ej. aria-sre.duckdns.org) → Caddy provisiona automáticamente
 #     un certificado TLS de Let's Encrypt (HTTP-01 por el :80) y redirige 80→443.
 # El compose pone DOMAIN=:80 por defecto cuando la variable está vacía o sin
 # definir, así que aquí siempre llega un valor válido.
 #
-# Enrutado:
+# Enrutado (compartido vía el snippet `app_proxy`, para no duplicarlo):
 #   /api/*  →  backend:8000   (se elimina el prefijo /api con handle_path)
 #   resto   →  frontend:3000  (Next.js)
 #
@@ -18,7 +18,7 @@
 # CORS entre navegador y API porque todo es el mismo origen.
 # ─────────────────────────────────────────────────────────────────────────────
 
-{$DOMAIN} {
+(app_proxy) {
 	encode gzip
 
 	# API del backend. handle_path quita "/api" antes de reenviar:
@@ -40,4 +40,21 @@
 		output stdout
 		format console
 	}
+}
+
+{$DOMAIN} {
+	import app_proxy
+}
+
+# Red de seguridad: acceso directo por IP en HTTP plano, sin TLS y SIN redirect
+# a HTTPS. En cuanto {$DOMAIN} es un hostname (no ":80"), Caddy activa HTTPS
+# automático para ese sitio y además añade, por defecto, un redirect 80->443
+# GLOBAL que aplica a CUALQUIER Host entrante en :80 -- incluida la IP pública
+# -- y la IP no tiene (ni puede tener) un certificado TLS válido: el resultado
+# es que la IP queda inservible (redirige a un https://<IP> que aborta el
+# handshake TLS). Este bloque, al declarar explícitamente un sitio HTTP puro
+# para la IP, hace que Caddy NO lo incluya en ese redirect automático y la IP
+# siga sirviendo la app en claro, igual que antes de activar el dominio.
+http://9.160.105.198 {
+	import app_proxy
 }
