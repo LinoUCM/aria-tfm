@@ -141,8 +141,14 @@ class Incident(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     postmortem_filename = Column(String, nullable=True) # Guardará el nombre del archivo PDF/MD
     # Resultado real del envío de la alerta a n8n/Telegram (_send_n8n_notification).
-    # "sent" (respuesta 2xx) / "failed" (excepción o no-2xx) / null si nunca se
-    # intentó o N8N_WEBHOOK_URL no está configurado.
+    # El workflow de n8n responde 2xx tanto si escaló (rama P1 -> Telegram) como
+    # si no (rama no-P1 -> "No escalado", sin enviar nada) -- el código HTTP por
+    # sí solo NO distingue esos dos casos, así que el valor sale de leer el
+    # campo `escalated` que el propio workflow devuelve en el cuerpo JSON:
+    # "sent" (2xx, escalated=true, se envió Telegram) / "skipped" (2xx,
+    # escalated=false, el workflow decidió no escalar por severidad -- no se
+    # envió nada, no es un fallo) / "failed" (excepción o no-2xx) / null si
+    # nunca se intentó o N8N_WEBHOOK_URL no está configurado.
     notification_status = Column(String(10), nullable=True)
     notification_sent_at = Column(DateTime, nullable=True)
 

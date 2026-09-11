@@ -30,7 +30,7 @@ interface Incident {
   suggested_action?: string | null;
   has_postmortem?: boolean;
   postmortem_filename?: string | null; // <--- Añadir esta línea
-  notification_status?: "sent" | "failed" | null; // envío alerta Telegram/n8n; null = no intentado
+  notification_status?: "sent" | "skipped" | "failed" | null; // envío alerta Telegram/n8n; null = no intentado
   notification_sent_at?: string | null;
   created_at: string;
 }
@@ -525,14 +525,27 @@ function StatusBadge({ status }: { status: string }) {
   return <span className={clsx("text-xs px-2.5 py-1 rounded-full font-medium", color)}>{label}</span>;
 }
 
-// Estado del envío de la alerta a Telegram/n8n (persistido en el incidente).
-// Mismo patrón visual que StatusBadge. Sin badge si nunca se intentó (null).
-function NotificationBadge({ status }: { status?: "sent" | "failed" | null }) {
-  if (status !== "sent" && status !== "failed") return null;
-  const sent = status === "sent";
-  const label = sent ? "🔔 Telegram: ✅ Enviada" : "🔔 Telegram: ❌ Error de envío";
-  const color = sent
-    ? "text-green-400 bg-green-900/30 border border-green-800/50"
-    : "text-red-400 bg-red-900/30 border border-red-800/50";
+// Estado del envío de la alerta a Telegram/n8n (persistido en el incidente,
+// ver backend `_send_n8n_notification`). Mismo patrón visual que StatusBadge.
+// Sin badge si nunca se intentó el envío (null / N8N_WEBHOOK_URL no configurado).
+//
+// "skipped" != "failed": el workflow de n8n solo escala a Telegram en P1 (y
+// tiene un nodo de email desactivado); en un no-P1 decide NO escalar y eso
+// no es un error -- por eso lleva su propio badge neutro ("No escalation"),
+// no el rojo de fallo real de envío.
+function NotificationBadge({ status }: { status?: "sent" | "skipped" | "failed" | null }) {
+  if (status !== "sent" && status !== "skipped" && status !== "failed") return null;
+  let label: string;
+  let color: string;
+  if (status === "sent") {
+    label = "🔔 Telegram: Sent";
+    color = "text-green-400 bg-green-900/30 border border-green-800/50";
+  } else if (status === "skipped") {
+    label = "No escalation";
+    color = "text-gray-400 bg-gray-800 border border-gray-700/50";
+  } else {
+    label = "🔔 Telegram: Failed";
+    color = "text-red-400 bg-red-900/30 border border-red-800/50";
+  }
   return <span className={clsx("text-xs px-2.5 py-1 rounded-full font-medium", color)}>{label}</span>;
 }

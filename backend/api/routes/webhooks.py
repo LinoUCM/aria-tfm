@@ -128,13 +128,34 @@ async def _send_n8n_notification(incident_id: str, payload_dict: dict):
         "raw_payload": payload_dict,
     }
 
+    # El workflow "Alerta Crítica - On-Call (Telegram + Email)" responde 2xx
+    # tanto si escaló como si no: la rama IF Severidad==P1 lleva a Telegram (+
+    # un nodo de email actualmente desactivado) y termina en el nodo
+    # "Responder - Escalado" ({"escalated": true, ...}); la rama no-P1 va
+    # directa a "Responder - No Escalado" ({"escalated": false, ...}) sin
+    # tocar Telegram ni email. Un 2xx por sí solo NO dice cuál de las dos
+    # ocurrió -- antes se marcaba "sent" con solo mirar el código HTTP, así
+    # que un P2/P3 (que nunca pasa por Telegram, y el email está desactivado)
+    # se pintaba igual que un P1 realmente notificado. Ahora se lee el cuerpo
+    # JSON que el propio workflow devuelve (responseMode: "responseNode", así
+    # que SÍ refleja qué rama se ejecutó) y se distingue por `escalated`.
     status = "failed"
     async with httpx.AsyncClient() as client:
         try:
             res = await client.post(settings.N8N_WEBHOOK_URL, json=n8n_payload, timeout=5.0)
             if res.is_success:  # 2xx
-                status = "sent"
-                logger.info("n8n_webhook_sent", status_code=res.status_code)
+                escalated = None
+                try:
+                    escalated = res.json().get("escalated")
+                except Exception:
+                    pass  # cuerpo no-JSON o inesperado: cae al fallback de abajo
+                if escalated is False:
+                    status = "skipped"
+                else:
+                    # escalated=true, o 2xx sin ese campo (versión antigua del
+                    # workflow / respuesta inesperada) -> conservador, como antes.
+                    status = "sent"
+                logger.info("n8n_webhook_sent", status_code=res.status_code, escalated=escalated)
             else:
                 logger.error("n8n_webhook_failed", status_code=res.status_code)
         except Exception as e:
