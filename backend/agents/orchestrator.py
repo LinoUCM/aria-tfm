@@ -120,11 +120,12 @@ SAFE_IDENTITY_RESPONSE = (
 # la señal de que la query de RAG/búsqueda necesita el contexto del turno
 # sustancial anterior para no depender de la frase suelta.
 _DEICTIC_RE = re.compile(
-    r"\b(eso|esto|esa|ese|esas|esos|aquello|aquella|"
+    r"\b(eso|esto|esa|ese|esas|esos|aquello|aquella|algo\s+as[ií]|una\s+cosa\s+as[ií]|"
     r"lo\s+mismo|lo\s+de\s+antes|lo\s+anterior|el\s+mismo|la\s+misma|"
     r"esto\s+se\s+repit\w*|se\s+repit\w*|volver\s+a\s+pasar|de\s+nuevo|otra\s+vez|"
     r"volviendo\s+a\s+lo|retom\w+|"
-    r"that|this|it|the\s+same|again|earlier|previously|previous\s+one)\b",
+    r"that|this|it|the\s+same|again|earlier|previously|previous\s+one|"
+    r"something\s+like\s+that|like\s+that)\b",
     re.IGNORECASE,
 )
 
@@ -150,6 +151,25 @@ _WEB_FILTER_STOPWORDS = {
     "servidor", "cache", "caché", "corrupt", "corrupta", "corrupto", "corrupted",
     "comando", "command", "log", "logs", "operations", "operation", "sre",
     "infra", "infrastructure", "infraestructura", "troubleshooting",
+}
+
+# Hallazgo B (residual) — palabras que SÍ superan el filtro de longitud/
+# stopwords de _distinctive_tokens (no son artículos ni verbos auxiliares)
+# pero son igual de genéricas: "¿cuánto tiempo suele llevar implementar algo
+# así?" las comparte con un artículo sobre implantar un ERP tanto como con
+# uno sobre migrar a microservicios. _filter_web_results las sigue contando
+# como tokens "distintivos" (entran en el cómputo), pero un resultado que
+# SOLO comparte tokens de este conjunto con la query ya no basta para pasar
+# el filtro por sí solo — necesita al menos un token FUERTE (nombre de
+# producto/servicio/tecnología, código de error, término técnico) o, si la
+# query no tiene ninguno, compartir al menos 2 de estos tokens débiles.
+_WEB_FILTER_WEAK_TOKENS = {
+    "tiempo", "tiempos", "suele", "suelen", "llevar", "lleva",
+    "implementar", "implementación", "implementacion", "implementado", "implementada",
+    "tarda", "tardar", "tarde", "cuesta", "costar", "coste", "costes",
+    "proceso", "procesos", "mejorar", "mejora", "mejoras",
+    "gestionar", "gestión", "gestion", "manera", "maneras", "forma", "formas",
+    "general", "generalmente", "normalmente", "normal", "habitual", "habitualmente",
 }
 
 
@@ -1330,18 +1350,39 @@ Be concise. Max 150 words."""
         mental / entretenimiento / navegador aparezca como 'fuente' de una
         respuesta técnica. Si la query no tiene tokens distintivos (demasiado
         genérica) NO se filtra nada; si el filtro deja la lista vacía, se
-        devuelve [] (mejor sin bloque 'Web sources' que con basura)."""
+        devuelve [] (mejor sin bloque 'Web sources' que con basura).
+
+        Hallazgo B (residual): un token "distintivo" por longitud no siempre
+        es TEMÁTICO — "tiempo", "implementar", "coste"... aparecen igual en
+        un artículo de gestión de proyectos que en uno de SRE, y bastaba con
+        UNO para salvar un resultado. Ahora se separan en dos niveles:
+          - tokens FUERTES = distinctive - _WEB_FILTER_WEAK_TOKENS (nombres
+            de producto/servicio/tecnología, códigos de error, jerga técnica
+            específica). Si la query tiene alguno, un resultado necesita
+            compartir AL MENOS UNO de ESOS para pasar — los débiles ya no
+            bastan por sí solos, por muchos que coincidan.
+          - si la query no tiene NINGÚN token fuerte (es puro lenguaje
+            genérico: "¿cuánto tiempo suele llevar implementar algo así?"),
+            se exige compartir al menos 2 de los tokens débiles disponibles
+            en vez de 1 — más estricto que antes sin descartar en bloque una
+            query legítimamente genérica (p. ej. sin historial previo)."""
         distinctive = self._distinctive_tokens(query)
         if not distinctive:
             return items
+        strong = distinctive - _WEB_FILTER_WEAK_TOKENS
         kept = []
         for r in items:
             blob = f"{r.get('title', '')} {r.get('content', '')}".lower()
-            if any(tok in blob for tok in distinctive):
+            if strong:
+                ok = any(tok in blob for tok in strong)
+            else:
+                ok = sum(1 for tok in distinctive if tok in blob) >= 2
+            if ok:
                 kept.append(r)
         if len(kept) != len(items):
             logger.info("web_results_filtered",
                         kept=len(kept), dropped=len(items) - len(kept),
+                        strong=sorted(strong)[:8],
                         distinctive=sorted(distinctive)[:8])
         return kept
 
