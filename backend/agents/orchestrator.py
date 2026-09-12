@@ -1605,10 +1605,12 @@ Genera un documento Markdown bien estructurado con las siguientes secciones:
 # Runbook: [Título optimizado y claro]
 
 ## 1. Contexto del Incidente
-- Incluye metadatos clave (ID, Servicio, Host, Ingeniero). Para la
-  Fecha/Hora de Resolución, usa EXACTAMENTE el valor proporcionado en
-  "Fecha/Hora de Resolución" arriba — no inventes una fecha ni uses un
-  formato de ejemplo tipo YYYY-MM-DD, copia el valor real tal cual.
+- Incluye metadatos clave (Servicio, Host, Ingeniero). NO repitas el ID del
+  incidente aquí: ya aparece en una línea verificada al principio del
+  documento, antes de este título. Para la Fecha/Hora de Resolución, usa
+  EXACTAMENTE el valor proporcionado en "Fecha/Hora de Resolución" arriba —
+  no inventes una fecha ni uses un formato de ejemplo tipo YYYY-MM-DD, copia
+  el valor real tal cual.
 
 ## 2. Descripción y Causa Raíz
 - Resume qué falló y la causa raíz identificada.
@@ -1623,7 +1625,19 @@ IMPORTANTE: Responde ÚNICAMENTE con el contenido Markdown final, sin saludos ni
 
         try:
             logger.info("synthesizing_runbook_with_llm", incident_id=incident_id)
-            return await self._llm_generate(prompt)
+            full_response = await self._llm_generate(prompt)
+            # P7: el LLM recibe el incident_id completo y correcto en el prompt
+            # (línea "ID Incidente" arriba), pero reproducir verbatim una
+            # cadena larga de 36 caracteres dentro de la prosa que redacta no
+            # es fiable -- confirmado generando runbooks reales: en pruebas
+            # sucesivas el ID salió con un carácter de menos, o directamente
+            # no apareció en el cuerpo. No es un bug de truncado en este
+            # código (el f-string de arriba interpola incident_id entero, sin
+            # slicing), es un fallo de fidelidad de transcripción del LLM. Se
+            # antepone una línea con el ID generada aquí en Python -- nunca
+            # por el LLM --, así el documento siempre lleva el ID real con
+            # independencia de lo que haya escrito el modelo.
+            return f"**ID de incidente verificado:** `{incident_id}`\n\n{full_response}"
         except Exception as e:
             logger.error("runbook_synthesis_failed_fallback_to_static", error=str(e))
             timestamp_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
@@ -1726,7 +1740,14 @@ El informe debe contener exactamente las siguientes secciones estructuradas con 
 
         try:
             logger.info("synthesizing_postmortem_with_llm", incident_id=str(inc_id))
-            return await self._llm_generate(prompt)
+            full_response = await self._llm_generate(prompt)
+            # P7 -- mismo fallo que en synthesize_runbook (ver comentario ahí):
+            # el LLM recibe el inc_id completo y correcto como dato de entrada
+            # ("- ID: {inc_id}" arriba), pero no reproduce de forma fiable una
+            # cadena larga dentro de la prosa que redacta -- en pruebas reales
+            # llegó a omitir el ID del cuerpo por completo. Se antepone una
+            # línea con el ID generada aquí en Python, nunca por el LLM.
+            return f"**ID de incidente verificado:** `{inc_id}`\n\n{full_response}"
         except Exception as e:
             logger.error("postmortem_synthesis_failed", error=str(e))
             return f"""# 📄 Post-Mortem Report: {inc_title}
