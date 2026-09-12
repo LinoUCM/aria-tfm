@@ -257,6 +257,7 @@ async def fire_preset(
     preset_key: str,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
+    current_user: TokenData = Depends(require_roles(["ADMIN", "ON_CALL"])),
 ):
     try:
         payload_dict = get_preset_with_timestamp(preset_key)
@@ -283,6 +284,7 @@ async def fire_custom(
     payload: DatadogWebhookPayload,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
+    current_user: TokenData = Depends(require_roles(["ADMIN", "ON_CALL"])),
 ):
     incident = await _create_incident_from_payload(payload, db)
     payload_dict = payload.model_dump()
