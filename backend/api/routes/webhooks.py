@@ -124,9 +124,19 @@ async def _send_n8n_notification(incident_id: str, payload_dict: dict):
         "incident_id": incident_id,
         "severity": payload_dict.get("priority", "P3"),
         "message_text": f"🚨 *Alerta ARIA: {payload_dict.get('title', 'Sin título')}*\n\n*ID Incidente:* `{incident_id}`\n*Estado:* Generado automáticamente por la plataforma.",
-        "dashboard_url": f"{settings.frontend_url.rstrip('/')}/incidents/{incident_id}",
+        # No existe (ni existió nunca) una ruta de página propia /incidents/<id>
+        # en el frontend -- solo la lista /incidents (App Router, sin
+        # app/incidents/[id]/page.tsx) -- así que un enlace a esa ruta daba 404.
+        # /incidents?incident=<id> reutiliza esa misma lista: al cargar, si el
+        # ID viene en la URL, la fila correspondiente se despliega y hace scroll
+        # sola (ver frontend/app/incidents/page.tsx). Sin nueva ruta, sin nuevo
+        # endpoint -- reutiliza el acordeón que ya existe y funciona.
+        "dashboard_url": f"{settings.frontend_url.rstrip('/')}/incidents?incident={incident_id}",
         "raw_payload": payload_dict,
     }
+    # Trazabilidad barata: permite confirmar el enlace real (por log, sin tener
+    # que disparar el envío a Telegram) que recibe cada incidente.
+    logger.info("n8n_notification_built", incident_id=incident_id, dashboard_url=n8n_payload["dashboard_url"])
 
     # El workflow "Alerta Crítica - On-Call (Telegram + Email)" responde 2xx
     # tanto si escaló como si no: la rama IF Severidad==P1 lleva a Telegram (+

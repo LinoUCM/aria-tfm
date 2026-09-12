@@ -2,7 +2,8 @@
 "use client";
 
 import { TopologyMap } from "@/components/TopologyMap";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { getIncidents, exportPostmortem, streamIncidentsFeed, streamIncidentAnalysis, errorMessage } from "@/lib/api";
 import { clsx } from "clsx";
 import { formatDistanceToNow } from "date-fns";
@@ -12,7 +13,7 @@ import { ResolveIncidentModal } from "@/components/ResolveIncidentModal";
 import {
   AlertTriangle, CheckCircle, Clock, Activity,
   ChevronDown, ChevronUp, Loader2, Zap, Server, Filter, Check, AlertCircle,
-  FileText
+  FileText, Copy, X as XIcon
 } from "lucide-react";
 
 interface Incident {
@@ -112,7 +113,11 @@ function PostMortemButton({
   );
 }
 
-export default function IncidentsPage() {
+// Cuerpo real de la página. Se separa del export por defecto porque usa
+// useSearchParams() (deep-link `?incident=<id>` desde Telegram/n8n), que
+// `next build` exige envolver en un límite de Suspense para poder generar la
+// ruta (mismo patrón ya usado en app/chat/page.tsx). No cambia ninguna lógica.
+function IncidentsPageInner() {
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [analysisStreams, setAnalysisStreams] = useState<Record<string, string>>({});
@@ -122,6 +127,35 @@ export default function IncidentsPage() {
   const [filterStatus, setFilterStatus] = useState<string>("ALL");
 
   const [resolveModalData, setResolveModalData] = useState<{ id: string; title: string } | null>(null);
+
+  // Deep-link `/incidents?incident=<id>` (enlace de las notificaciones de
+  // Telegram, ver backend `_send_n8n_notification`): al cargar, si el ID viene
+  // en la URL y aparece en la lista, se despliega automáticamente y se hace
+  // scroll hasta esa fila. `deepLinkHandledRef` evita repetir el auto-scroll
+  // en cada actualización de `incidents` (llegan por SSE); `deepLinkNotFound`
+  // cubre el caso de un incidente más antiguo que los últimos 50 que trae
+  // `getIncidents()` (limitación ya existente de la lista, no introducida por
+  // esto) — se avisa en vez de fallar en silencio.
+  const searchParams = useSearchParams();
+  const deepLinkId = searchParams.get("incident");
+  const deepLinkHandledRef = useRef(false);
+  const [deepLinkNotFound, setDeepLinkNotFound] = useState<string | null>(null);
+
+  // Copiar el ID del incidente (lista o detalle) con un clic — para que el
+  // equipo de guardia pueda localizar/confirmar el incidente exacto recibido
+  // por Telegram/email dentro de la propia interfaz.
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const handleCopyId = async (id: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(id);
+      setCopiedId(id);
+      setTimeout(() => setCopiedId((prev) => (prev === id ? null : prev)), 1500);
+    } catch {
+      // Clipboard API puede no estar disponible (permisos, contexto no
+      // seguro); no es crítico, el ID sigue visible para copiarlo a mano.
+    }
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -228,6 +262,30 @@ export default function IncidentsPage() {
     }
   };
 
+  useEffect(() => {
+    if (!deepLinkId || deepLinkHandledRef.current || incidents.length === 0) return;
+    const match = incidents.find((i) => i.id === deepLinkId);
+    if (match) {
+      deepLinkHandledRef.current = true;
+      setDeepLinkNotFound(null);
+      handleExpand(match);
+      // Espera al siguiente frame para que la fila ya esté en el DOM
+      // (el acordeón se acaba de desplegar) antes de hacer scroll.
+      requestAnimationFrame(() => {
+        document
+          .getElementById(`incident-${deepLinkId}`)
+          ?.scrollIntoView({ behavior: "smooth", block: "center" });
+      });
+    } else {
+      // No está en los últimos `limit` incidentes cargados. Se avisa en vez
+      // de dejar la página en blanco sin explicación; sigue reintentando en
+      // cada actualización de `incidents` (p. ej. si llega justo después por
+      // el feed SSE) hasta encontrarlo.
+      setDeepLinkNotFound(deepLinkId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [incidents, deepLinkId]);
+
   const handleOpenResolve = (incident: Incident, e: React.MouseEvent) => {
     e.stopPropagation();
     setResolveModalData({ id: incident.id, title: incident.title });
@@ -272,6 +330,22 @@ export default function IncidentsPage() {
           <span className="text-xs text-gray-400">Live</span>
         </div>
       </div>
+
+      {deepLinkNotFound && (
+        <div className="flex items-center justify-between gap-3 bg-yellow-900/20 border border-yellow-800 text-yellow-300 text-xs rounded-lg px-4 py-2.5">
+          <span>
+            Incident <code className="font-mono">{deepLinkNotFound.slice(0, 8)}</code> from the link isn&apos;t in the
+            list currently shown (it may be older than the most recent incidents loaded here).
+          </span>
+          <button
+            onClick={() => setDeepLinkNotFound(null)}
+            className="text-yellow-400 hover:text-yellow-200 flex-shrink-0"
+            aria-label="Dismiss"
+          >
+            <XIcon className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
 
       <div className="grid grid-cols-3 gap-4">
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
@@ -351,6 +425,7 @@ export default function IncidentsPage() {
             return (
               <div
                 key={incident.id}
+                id={`incident-${incident.id}`}
                 className={clsx(
                   "relative border rounded-xl transition-all",
                   isExpanded ? "z-20" : "z-0 hover:z-30 focus-within:z-40",
@@ -378,6 +453,25 @@ export default function IncidentsPage() {
                         <Clock className="w-3 h-3" />
                         {incident.created_at ? formatDistanceToNow(new Date(incident.created_at), { addSuffix: true }) : "recently"}
                       </span>
+                      {/* ID corto, copiable con un clic: el mensaje de Telegram/email solo
+                          da el ID -- esto permite localizar y confirmar visualmente que es
+                          el incidente correcto sin tener que abrir el detalle. */}
+                      <button
+                        onClick={(e) => handleCopyId(incident.id, e)}
+                        title={`Copy full ID: ${incident.id}`}
+                        className="text-xs text-gray-500 hover:text-gray-300 flex items-center gap-1 font-mono transition"
+                      >
+                        {copiedId === incident.id ? (
+                          <>
+                            <Check className="w-3 h-3 text-emerald-400" />
+                            <span className="text-emerald-400">Copied</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3 h-3" />#{incident.id.slice(0, 8)}
+                          </>
+                        )}
+                      </button>
                     </div>
                   </div>
 
@@ -414,6 +508,23 @@ export default function IncidentsPage() {
 
                 {isExpanded && (
                   <div className="border-t border-gray-800 p-4 space-y-4">
+                    <div className="flex items-center gap-2 text-xs text-gray-500">
+                      <span className="text-gray-400">Incident ID:</span>
+                      <button
+                        onClick={(e) => handleCopyId(incident.id, e)}
+                        title="Copy full ID"
+                        className="flex items-center gap-1.5 font-mono text-gray-300 hover:text-white bg-gray-900/50 border border-gray-800 rounded px-2 py-1 transition"
+                      >
+                        {incident.id}
+                        {copiedId === incident.id ? (
+                          <Check className="w-3 h-3 text-emerald-400 flex-shrink-0" />
+                        ) : (
+                          <Copy className="w-3 h-3 flex-shrink-0" />
+                        )}
+                      </button>
+                      {copiedId === incident.id && <span className="text-emerald-400">Copied</span>}
+                    </div>
+
                     {incident.metrics && Object.keys(incident.metrics).length > 0 && (
                       <div>
                         <h4 className="text-xs font-medium text-gray-400 mb-2">Metrics</h4>
@@ -503,6 +614,14 @@ export default function IncidentsPage() {
         }}
       />
     </div>
+  );
+}
+
+export default function IncidentsPage() {
+  return (
+    <Suspense fallback={null}>
+      <IncidentsPageInner />
+    </Suspense>
   );
 }
 
