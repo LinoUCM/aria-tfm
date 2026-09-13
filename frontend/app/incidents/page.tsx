@@ -574,6 +574,7 @@ function IncidentsPageInner() {
                             <RemediationCard
                               incidentId={incident.id}
                               suggestedAction={incident.suggested_action}
+                              incidentHost={incident.host}
                               onResolved={() => {
                                 setIncidents((prev) =>
                                   prev.map((i) => (i.id === incident.id ? { ...i, status: "RESOLVED" } : i))

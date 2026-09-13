@@ -4,6 +4,7 @@ import { executeRemediation, errorMessage } from '@/lib/api';
 interface RemediationProps {
   incidentId: string;
   suggestedAction?: string | null;
+  incidentHost?: string | null;
   onResolved: () => void;
 }
 
@@ -34,13 +35,34 @@ const PLAYBOOKS: Record<string, { actionId: string; title: string; target: strin
   },
 };
 
-export const RemediationCard: React.FC<RemediationProps> = ({ incidentId, suggestedAction, onResolved }) => {
-  const playbook = suggestedAction ? PLAYBOOKS[suggestedAction] : undefined;
+export const RemediationCard: React.FC<RemediationProps> = ({ incidentId, suggestedAction, incidentHost, onResolved }) => {
+  const basePlaybook = suggestedAction ? PLAYBOOKS[suggestedAction] : undefined;
   const [loading, setLoading] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [resultMessage, setResultMessage] = useState<string | null>(null);
 
-  if (!playbook) return null;
+  if (!basePlaybook) return null;
+
+  // RESTART_CONTAINER es la única de las tres acciones con ejecución real
+  // contra Docker (ver backend/services/remediation.py): dejar su target
+  // fijo al valor del diccionario ("aria-postgres-1") hacía que la tarjeta
+  // ofreciera reiniciar Postgres para un incidente de cualquier otro
+  // servicio -- y, de confirmarse, reiniciaría de verdad ese contenedor sin
+  // relación con el incidente real. Se construye a partir del host real del
+  // incidente en su lugar; si por lo que sea no llega (incidente antiguo sin
+  // `host`), se cae al valor fijo del diccionario en vez de mandar un
+  // container_name vacío. FLUSH_REDIS_CACHE y TERMINATE_IDLE_CONNECTIONS no
+  // se tocan: siguen atados a infraestructura real conocida, no a un host
+  // por incidente.
+  // El title también se genera aquí cuando hay incidentHost: "Restart
+  // PostgreSQL" (el literal del diccionario) sería engañoso para el target
+  // real de otro servicio. Sin incidentHost, el target sigue siendo
+  // aria-postgres-1 y ese título literal sigue siendo correcto, así que no
+  // se sobrescribe en ese caso.
+  const playbook =
+    basePlaybook.actionId === "RESTART_CONTAINER" && incidentHost
+      ? { ...basePlaybook, title: "Restart Container", target: incidentHost, params: { container_name: incidentHost } }
+      : basePlaybook;
 
   const handleExecute = async () => {
     setLoading(true);
